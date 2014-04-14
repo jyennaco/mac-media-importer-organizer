@@ -16,4 +16,4 @@ require 'media_importer'
 require 'backer_upper'
 
 MediaImporter.import_media
-BackerUpper.backup_files
+#BackerUpper.backup_files
