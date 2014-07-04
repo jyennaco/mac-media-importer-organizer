@@ -11,6 +11,7 @@
 # selected volumes to the correct folders.
 
 require 'fileutils'
+require 'logger'
 
 class MediaImporter
 	
@@ -21,8 +22,6 @@ class MediaImporter
 	# Root directories for Pics and Vids
 	@@pic_dir = File.join(File.expand_path('~'), 'Pictures')
 	@@vid_dir = File.join(File.expand_path('~'), 'Movies')
-	#@@pic_dir = File.join(File.expand_path('~'), 'Test')
-	#@@vid_dir = File.join(File.expand_path('~'), 'Test')
 	
 	# Counters
 	@@num_pics = 0
@@ -30,12 +29,15 @@ class MediaImporter
 		
 	# This is the public method kicking of the media import process
 	def self.import_media
-		Logger.output_major_status("Running Media Importer...")
+		
+		$log.debug("MediaImporter::import_media -- Running Media Importer ...")
+				
+		Volumes.set_volumes
 		volumes = Volumes.get_volumes
-		volumes.delete_if { |x| x.downcase.include?("backup") }
 		
 		if volumes.empty?
-			Logger.output_minor_status("No Volumes to Import", :complete)  
+			Printer.output_minor_status("No Volumes to Import", :complete)
+			$log.info("MediaImporter::import_media -- There are no volumes to import, exiting ...")  
 			return
 		end
 		
@@ -46,15 +48,19 @@ class MediaImporter
 			if volume == "done"
 				break
 			else
-				Logger.output_major_status("Importing from " + volume + "...")
+				Printer.output_major_status("Importing from " + File.basename(volume) + " ...")
+				$log.info("MediaImporter::import_media -- Importing from " + File.basename(volume) + " ...")
 				import_volume(volume)
-				Logger.output_minor_status("SUMMARY: Processed #{@@num_pics} pics", :complete)
-				Logger.output_minor_status("SUMMARY: Processed #{@@num_vids} vids", :complete)
-				Logger.output_major_status("Import from " + volume + " Complete!")
+				Printer.output_minor_status("SUMMARY: Processed #{@@num_pics} pics", :complete)
+				$log.info("MediaImporter::import_media -- SUMMARY: Processed #{@@num_pics} pics")
+				Printer.output_minor_status("SUMMARY: Processed #{@@num_vids} vids", :complete)
+				$log.info("MediaImporter::import_media -- SUMMARY: Processed #{@@num_vids} vids")
+				Printer.output_major_status("Import from " + File.basename(volume) + " Complete!")
 			end
 		end
 		
-		Logger.output_major_status("Done Running Media Importer.")
+		Printer.output_major_status("Done Running Media Importer.")
+		$log.debug("MediaImporter::import_media -- Done Running Media Importer.")
 	end
 	
 	private # Private methods follow
@@ -63,32 +69,39 @@ class MediaImporter
 	# if so, it kicks off the import_path method, which recursively
 	# searches the volume for media files and imports
 	def self.import_volume(volume)
+		
+		$log.debug("MediaImporter::import_volume -- Importing volume: #{volume}")
+		
 		# Reset Counters for this volume
 		@@num_pics = 0
 		@@num_vids = 0
-		
-		# Build the absolute volume path
-		volume_path = File.join('', 'Volumes', volume)
 				
 		# Log an error and return if the volume_path doesn't exist or
 		# is not a directory
 		if not Volumes.readable?(volume)
-			Logger.output_error("#{volume} is not a readable device! Skipping...")
+			Printer.output_error("#{volume} is not a readable device! Skipping ...")
+			$log.warn("MediaImporter::import_volume -- #{volume} is not a readable device! Skipping ...")
 			return
 		else
 			# Otherwise scan the volume for importable media
-			scan_path(volume_path)
+			scan_path(volume)
 		end
 	end
 	
-	def self.scan_path(path)			
+	def self.scan_path(path)	
+		
+		$log.debug("MediaImporter::scan_path -- Scanning path: #{path}")
+		
 		# Call import_file if the path points to a readable file
 		if File.file?(path) and File.readable?(path)
+			$log.debug("MediaImporter::scan_path -- This is a file: #{path}")
 			import_file(path)
 		
 		# Recursively call scan_path if the path points to a readable 
 		# directory
 		elsif File.directory?(path) and File.readable?(path)
+			
+			$log.debug("MediaImporter::scan_path -- This is a directory: #{path}")
 			
 			# Get the contents of the directory
 			contents = Dir.entries(path)
@@ -97,27 +110,35 @@ class MediaImporter
 			contents.each do |item|
 				scan_path(File.join(path, item)) unless item.start_with?(".")
 			end
+		else
+			Printer.output_error("MediaImporter::scan_path -- Path was not a directory nor file!?: #{path}")
 		end
 	end
 	
 	def self.import_file(path)
+		
+		$log.debug("MediaImporter::import_file -- Importing file: #{path}")
+		
 		# Get the file extensions
 		extension = File.extname(path).downcase
 		
 		# If the extension is a pic, set the target path and import the file
 		if @@pic_extensions.include?(extension)
-			Logger.output_minor_status("Importing Picture:\t#{path}", :none)
+			Printer.output_minor_status("Importing Picture:\t#{path}", :none)
+			$log.info("MediaImporter::import_file -- Importing Picture: #{path}")
 			@@num_pics = @@num_pics + 1 
 			target_path = @@pic_dir # Set target path to the pic root directory
 		
 		# If the extension is a vid, set the target path and import the file
 		elsif @@vid_extensions.include?(extension)
-			Logger.output_minor_status("Importing Video:\t#{path}", :none)
+			Printer.output_minor_status("Importing Video:\t#{path}", :none)
+			$log.info("MediaImporter::import_file -- Importing Video: #{path}")
 			@@num_vids = @@num_vids + 1
 			target_path = @@vid_dir # Set target path to the vid root directory
 		
 		# If the file is neither a pic nor vid, return
 		else
+			$log.info("MediaImporter::import_file -- Not a pic nor vid: #{path}")
 			return
 		end
 			
@@ -155,11 +176,13 @@ class MediaImporter
 		
 		# Copy the file to the target path if the target path doesn't exist already
 		if File.exist?(target_path)
-			Logger.output_minor_status("File Already Exists", :complete)
+			Printer.output_minor_status("File Already Exists", :complete)
+			$log.info("MediaImporter::import_file -- File already exists: #{target_path}")
 			puts ""
 		elsif
 			FileUtils.cp(path,target_path,:preserve=>true)
-			Logger.output_minor_status("Imported To:\t\t#{target_path}", :none)
+			Printer.output_minor_status("Imported To:\t\t#{target_path}", :none)
+			$log.info("MediaImporter::import_file -- Imported file to: #{target_path}")
 			puts ""
 		end
 	end
