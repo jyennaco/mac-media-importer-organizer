@@ -16,6 +16,6 @@ done
 
 RUN_DIR=$(dirname -- "$SELF_PATH")
 
-echo "Running... $SELF_PATH"
+echo "Running: $SELF_PATH"
 
 ruby ${RUN_DIR}/init.rb
