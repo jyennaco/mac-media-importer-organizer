@@ -21,11 +21,11 @@ class BackerUpper
   @@no_update_items = [".mp3", ".m4a", ".m4p", ".wma"]
   
   def self.backup_files
-    Logger.output_major_status("Running Backer Upper...")
+    Printer.output_major_status("Running Backer Upper...")
     volumes = Volumes.get_volumes
 		
 		if volumes.empty?
-			Logger.output_minor_status("No Volumes to Backup To!", :complete)  
+			Printer.output_minor_status("No Volumes to Backup To!", :complete)  
 			return
 		end
 		
@@ -35,13 +35,13 @@ class BackerUpper
       if volume == "done"
         break
       else
-        Logger.output_major_status("Backing up to " + volume + "...")
+        Printer.output_major_status("Backing up to " + volume + "...")
         backup_to_volume(volume)
-        Logger.output_major_status("Backup to " + volume + " Complete!")
+        Printer.output_major_status("Backup to " + volume + " Complete!")
       end
 	  end
     
-    Logger.output_major_status("Done Backer Upper.")
+    Printer.output_major_status("Done Backer Upper.")
   end
   
   private # Private methods follow
@@ -51,7 +51,7 @@ class BackerUpper
 		volume_path = File.join('', 'Volumes', volume)
 		
 		if not Volumes.writable?(volume)
-		  Logger.output_error("Backup Drive #{volume} is not writable! Skipping...")
+		  Printer.output_error("Backup Drive #{volume} is not writable! Skipping...")
 		  return
 	  end
 	  
@@ -63,7 +63,7 @@ class BackerUpper
     source = File.basename(source_path)
     return if skip?(source)
     
-    Logger.output_minor_status("Backing Up:\t\t#{source_path}", :none)
+    Printer.output_minor_status("Backing Up:\t\t#{source_path}", :none)
     
     # If the source_path is a file, back it up if needed
     if File.file?(source_path)
@@ -81,18 +81,18 @@ class BackerUpper
         
         if (difference > 10) and not @@no_update_items.include?(extension)
           FileUtils.cp(source_path,target_path,:preserve=>true)
-          Logger.output_minor_status("Updated Backup:\t#{target_path}", :none)
-          Logger.output_minor_status("="*120, :none)
+          Printer.output_minor_status("Updated Backup:\t#{target_path}", :none)
+          Printer.output_minor_status("="*120, :none)
         else
-          Logger.output_minor_status("Backup Exists:\t#{target_path}", :none)
-          Logger.output_minor_status("="*120, :none)
+          Printer.output_minor_status("Backup Exists:\t#{target_path}", :none)
+          Printer.output_minor_status("="*120, :none)
         end
       
       else
         # Copy file to backup
         FileUtils.cp(source_path,target_path,:preserve=>true)
-        Logger.output_minor_status("Created Backup:\t#{target_path}", :none)
-        Logger.output_minor_status("="*120, :none)
+        Printer.output_minor_status("Created Backup:\t#{target_path}", :none)
+        Printer.output_minor_status("="*120, :none)
       end
       
     # If the source_path is a directory, recursively traverse it
