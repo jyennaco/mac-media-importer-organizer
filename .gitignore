@@ -1,2 +1,4 @@
 log-*
 log/
+completed_imports.txt
+.DS_Store
