@@ -28,22 +28,24 @@ class MediaImporter
 	@@num_vids = 0
 		
 	# This is the public method kicking of the media import process
-	def self.import_media
+	def self.import_media(path = "None")
 		
 		$log.debug("MediaImporter::import_media -- Running Media Importer ...")
-				
-		Volumes.set_volumes
-		volumes = Volumes.get_volumes
-		
-		if volumes.empty?
-			Printer.output_minor_status("No Volumes to Import", :complete)
-			$log.info("MediaImporter::import_media -- There are no volumes to import, exiting ...")  
-			return
+
+		if path == "None"
+			Volumes.set_volumes
+			volumes = Volumes.get_volumes
+			if volumes.empty?
+				Printer.output_minor_status("No Volumes to Import", :complete)
+				$log.info("MediaImporter::import_media -- There are no volumes to import, exiting ...")
+				return
+			end
+
+			selected_volumes = Volumes.get_selected_volumes("Type volumes to import:")
+		else
+			selected_volumes = [path]
 		end
-		
-		selected_volumes = Volumes.get_selected_volumes("Type volumes to import:")
-		
-		
+
 		selected_volumes.each do |volume|
 			if volume == "done"
 				break

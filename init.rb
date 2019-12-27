@@ -19,7 +19,7 @@ require 'backer_upper'
 # Create log file name
 time = Time.now
 logFileName = "log-" + time.year.to_s + time.month.to_s.rjust(2, "0") + time.day.to_s.rjust(2, "0") + "-" + time.hour.to_s.rjust(2, "0") + time.min.to_s.rjust(2, "0") + time.sec.to_s.rjust(2, "0") + ".txt"
-logFilePath = File.join(APP_ROOT, logFileName)
+logFilePath = File.join(APP_ROOT, "log", logFileName)
 
 puts "Creating log file: #{logFilePath}"
 
@@ -28,7 +28,7 @@ begin
 	file = File.new(logFilePath, "w")
 rescue
 	puts "Could not create new log file: #{logFilePath}"
-	exit
+	exit(1)
 end
 
 # Add text to log file
@@ -40,7 +40,18 @@ $log.level = Logger::DEBUG
 
 # Run the MediaImporter!
 $log.info("Init -- Running mac-media-importer-organizer!!")
-MediaImporter.import_media
+
+input_array = ARGV
+puts "Found command line args: #{input_array.to_s}"
+
+if input_array.length > 0
+  path = input_array[0]
+else
+  path = "None"
+end
+puts "Using import path: #{path}"
+
+MediaImporter.import_media(path)
 #BackerUpper.backup_files
 
 $log.info("Init -- mac-media-importer-organizer completed!")
@@ -55,3 +66,4 @@ ensure
 end
 
 puts "Exiting mac-media-importer-organizer!"
+exit(0)
