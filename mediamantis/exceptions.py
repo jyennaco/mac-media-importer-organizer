@@ -11,5 +11,9 @@ class ArchiverError(Exception):
     """Problem archiving a file"""
 
 
+class ImporterError(Exception):
+    """Problem importing a file"""
+
+
 class MantisError(Exception):
     """General error with Media Mantis"""

@@ -22,7 +22,7 @@ from .exceptions import ArchiverError
 
 mod_logger = Logify.get_name() + '.mediamantis'
 
-# Commands for setting up the cons3rtapi configuration
+# Commands for configuration
 setup_command_options = [
     'setup',
     'config',
@@ -31,7 +31,8 @@ setup_command_options = [
 
 # List of valid CLI commands
 valid_commands = setup_command_options + [
-    'archive'
+    'archive',
+    'import'
 ]
 
 # String representation of valid commands
@@ -40,7 +41,6 @@ valid_commands_str = 'Valid commands: {c}'.format(c=', '.join(valid_commands))
 
 def archive(args):
     log = logging.getLogger(mod_logger + '.archive')
-    source_dir = None
     if args.dir:
         source_dir = args.dir
     else:
@@ -70,11 +70,26 @@ def archive(args):
     return 0
 
 
+def import_media(args):
+    log = logging.getLogger(mod_logger + '.import_media')
+    if args.dir:
+        source_dir = args.dir
+    else:
+        log.error('--dir arg is required, set to the path of media files to archive')
+        return 1
+
+    
+
+    log.info('Media import completed!')
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
     parser.add_argument('--dir', help='Archive directory to process', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
+    parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
     args = parser.parse_args()
 
     # Get the command
@@ -86,6 +101,8 @@ def main():
     res = 0
     if command == 'archive':
         res = archive(args)
+    elif command == 'import':
+        res = import_media(args)
     return res
 
 

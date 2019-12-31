@@ -6,3 +6,4 @@ nohup.out
 mediamantis.egg-info
 dist
 build
+mediamantis/__pycache__

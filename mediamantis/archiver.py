@@ -8,7 +8,6 @@ Manage media file archives
 """
 
 import datetime
-import enum
 import logging
 import random
 import os
@@ -18,10 +17,12 @@ import threading
 
 from pycons3rt3.bash import zip_dir, CommandError
 from pycons3rt3.logify import Logify
-from pycons3rt3.s3util import S3Util, S3UtilError
+from pycons3rt3.s3util import S3Util
 import requests
 
 from .exceptions import ArchiverError
+from .mantistypes import ArchiveStatus, MediaFileType
+from .mediafile import MediaFile
 from .settings import extensions, local_dirs, max_archive_size_bytes, skip_files
 
 
@@ -29,34 +30,6 @@ mod_logger = Logify.get_name() + '.archiver'
 
 word_file = '/usr/share/dict/words'
 word_site = 'https://svnweb.freebsd.org/csrg/share/dict/words?view=co&content-type=text/plain'
-
-
-class MediaFileType(enum.Enum):
-    MOVIES = 1
-    PICTURE = 2
-    AUDIO = 3
-    UNKNOWN = 4
-
-
-class ArchiveStatus(enum.Enum):
-    COMPLETED = 1
-    PENDING = 2
-
-
-class MediaFile(object):
-
-    def __init__(self, file_path, creation_time, size_bytes, file_type):
-        self.file_path = file_path
-        self.file_name = file_path.split(os.sep)[-1]
-        self.creation_time = creation_time
-        self.creation_timestamp = datetime.datetime.fromtimestamp(creation_time).strftime('%Y%m%d-%H%M%S')
-        self.size_bytes = size_bytes
-        self.file_type = file_type
-        self.archive_status = ArchiveStatus.PENDING
-        self.destination_path = None
-
-    def __str__(self):
-        return self.file_name
 
 
 class Archiver(threading.Thread):
@@ -170,7 +143,7 @@ class Archiver(threading.Thread):
 
         :param first_timestamp: (str) timestamp format: yyyymmdd-HHMMSS
         :param last_timestamp: (str) timestamp format: yyyymmdd-HHMMSS
-        :return: (str) directory name for an archive of format: yyyymmdd-yyyymmdd_uniqueword
+        :return: (str) directory name for an archive of format: yyyymmdd-yyyymmdd_uniqueWord
         """
         return first_timestamp.split('-')[0] + '-' + last_timestamp.split('-')[0] + '_' + self.primary_id_word
 
@@ -302,7 +275,7 @@ class Archiver(threading.Thread):
         """Creates zip archives of media files in a directory with a maximum size
 
         :return: None
-        :raisess: ArchiverError
+        :raises: ArchiverError
         """
         log = logging.getLogger(self.cls_logger + '.process_archive')
 
