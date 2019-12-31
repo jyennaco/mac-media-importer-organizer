@@ -2,3 +2,7 @@ log-*
 log/
 completed_imports.txt
 .DS_Store
+nohup.out
+mediamantis.egg-info
+dist
+build
