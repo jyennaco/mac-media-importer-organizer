@@ -48,7 +48,12 @@ def archive(args):
         log.error('--dir arg is required, set to the path of media files to archive')
         return 1
 
-    a = Archiver(dir_to_archive=source_dir)
+    media_inbox = None
+    if args.mediainbox:
+        media_inbox = args.mediainbox
+        log.info('Using media inbox: {d}'.format(d=media_inbox))
+
+    a = Archiver(dir_to_archive=source_dir, media_inbox=media_inbox)
     try:
         a.process_archive()
     except ArchiverError as exc:
@@ -102,6 +107,8 @@ def main():
     parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
+    parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
+                        required=False)
     args = parser.parse_args()
 
     # Get the command

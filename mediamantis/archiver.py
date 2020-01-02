@@ -35,11 +35,11 @@ word_site = 'https://svnweb.freebsd.org/csrg/share/dict/words?view=co&content-ty
 
 class Archiver(threading.Thread):
 
-    def __init__(self, dir_to_archive):
+    def __init__(self, dir_to_archive, media_inbox=None):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Archiver'
         self.dir_to_archive = dir_to_archive
-        self.dirs = Directories()
+        self.dirs = Directories(media_inbox=media_inbox)
         self.archive_files_dir = self.dirs.archive_files_dir
         self.current_archive_size_bytes = 0
         if os.path.isfile(word_file):
