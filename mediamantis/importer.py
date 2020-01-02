@@ -10,18 +10,17 @@ Imports media files from a variety of sources
 import datetime
 import logging
 import os
-import platform
 import shutil
 import threading
 
 from pycons3rt3.logify import Logify
-from pycons3rt3.s3util import S3Util, S3UtilError
 
 from .archiver import Archiver
+from .directories import Directories
 from .exceptions import ArchiverError, ImporterError
 from .mantistypes import ImportStatus, MediaFileType
 from .mediafile import MediaFile
-from .settings import extensions, local_dirs
+from .settings import extensions
 
 
 mod_logger = Logify.get_name() + '.importer'
@@ -34,14 +33,9 @@ class Importer(threading.Thread):
         self.cls_logger = mod_logger + '.Importer'
         self.import_dir = import_dir
         self.media_import_root = media_import_root
-        if media_import_root:
-            local_dirs['media_root'] = media_import_root
+        self.dirs = Directories(media_root=media_import_root)
         self.extensions = extensions
-        self.local_dirs = local_dirs
         self.arch = Archiver(dir_to_archive=import_dir)
-        self.picture_dir = local_dirs['picture_dir']
-        self.movie_dir = local_dirs['movie_dir']
-        self.music_dir = local_dirs['music_dir']
         self.file_import_count = 0
         self.picture_import_count = 0
         self.movie_import_count = 0
@@ -71,11 +65,11 @@ class Importer(threading.Thread):
 
         # Determine the destination import directory based on file type
         if media_file.file_type == MediaFileType.PICTURE:
-            import_root_path = self.picture_dir
+            import_root_path = self.dirs.picture_dir
         elif media_file.file_type == MediaFileType.MOVIE:
-            import_root_path = self.movie_dir
+            import_root_path = self.dirs.movie_dir
         elif media_file.file_type == MediaFileType.AUDIO:
-            import_root_path = self.music_dir
+            import_root_path = self.dirs.music_dir
         else:
             log.warning('File {f} with type {t} will not be imported'.format(
                 f=media_file.file_name, t=media_file.file_type))

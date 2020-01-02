@@ -20,10 +20,11 @@ from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
 import requests
 
+from .directories import Directories
 from .exceptions import ArchiverError
 from .mantistypes import ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
-from .settings import extensions, local_dirs, max_archive_size_bytes, skip_items
+from .settings import extensions, max_archive_size_bytes, skip_items
 
 
 mod_logger = Logify.get_name() + '.archiver'
@@ -38,7 +39,8 @@ class Archiver(threading.Thread):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Archiver'
         self.dir_to_archive = dir_to_archive
-        self.archive_files_dir = local_dirs['archive_files_dir']
+        self.dirs = Directories()
+        self.archive_files_dir = self.dirs.archive_files_dir
         self.current_archive_size_bytes = 0
         if os.path.isfile(word_file):
             self.words = open(word_file).read().splitlines()
