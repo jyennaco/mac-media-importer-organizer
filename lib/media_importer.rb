@@ -16,7 +16,7 @@ require 'logger'
 class MediaImporter
 	
 	# Class vars store file types to import
-	@@pic_extensions = [".jpg", ".jpeg", ".gif", ".bmp", ".png", ".tiff", ".tif", ".heic"]
+	@@pic_extensions = [".jpg", ".jpeg", ".gif", ".bmp", ".png", ".tiff", ".tif", ".heic", ".aae"]
 	@@vid_extensions = [".mov", ".3gp", ".mp4", ".m4v", ".avi", ".mpg", ".wmv"]
 	
 	# Root directories for Pics and Vids
