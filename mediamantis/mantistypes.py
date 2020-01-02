@@ -11,7 +11,7 @@ import enum
 
 
 class MediaFileType(enum.Enum):
-    MOVIES = 1
+    MOVIE = 1
     PICTURE = 2
     AUDIO = 3
     UNKNOWN = 4
@@ -20,3 +20,10 @@ class MediaFileType(enum.Enum):
 class ArchiveStatus(enum.Enum):
     COMPLETED = 1
     PENDING = 2
+
+
+class ImportStatus(enum.Enum):
+    COMPLETED = 1
+    PENDING = 2
+    ALREADY_EXISTS = 3
+    DO_NOT_IMPORT = 4

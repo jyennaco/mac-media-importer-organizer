@@ -17,7 +17,8 @@ import traceback
 from pycons3rt3.logify import Logify
 
 from .archiver import Archiver
-from .exceptions import ArchiverError
+from .exceptions import ArchiverError, ImporterError
+from .importer import Importer
 
 
 mod_logger = Logify.get_name() + '.mediamantis'
@@ -62,7 +63,7 @@ def archive(args):
         try:
             a.upload_to_s3(bucket_name=s3bucket)
         except ArchiverError as exc:
-            log.error('Problem uploading to S3 bucket {b}\n{e}'.format(b=s3bucket, e=str(exc)))
+            log.error('Problem uploading to S3 bucket: {b}\n{e}'.format(b=s3bucket, e=str(exc)))
             traceback.print_exc()
             return 3
         log.info('Completed S3 uploads')
@@ -78,7 +79,17 @@ def import_media(args):
         log.error('--dir arg is required, set to the path of media files to archive')
         return 1
 
-    
+    root_import_dir = None
+    if args.rootimportdir:
+        root_import_dir = args.rootimportdir
+
+    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir)
+    try:
+        imp.process_import()
+    except ImporterError as exc:
+        log.error('Problem processing import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
+        traceback.print_exc()
+        return 2
 
     log.info('Media import completed!')
     return 0
@@ -88,6 +99,7 @@ def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
     parser.add_argument('--dir', help='Archive directory to process', required=False)
+    parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
     args = parser.parse_args()

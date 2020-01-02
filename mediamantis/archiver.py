@@ -23,7 +23,7 @@ import requests
 from .exceptions import ArchiverError
 from .mantistypes import ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
-from .settings import extensions, local_dirs, max_archive_size_bytes, skip_files
+from .settings import extensions, local_dirs, max_archive_size_bytes, skip_items
 
 
 mod_logger = Logify.get_name() + '.archiver'
@@ -39,7 +39,6 @@ class Archiver(threading.Thread):
         self.cls_logger = mod_logger + '.Archiver'
         self.dir_to_archive = dir_to_archive
         self.archive_files_dir = local_dirs['archive_files_dir']
-        self.max_archive_size_bytes = max_archive_size_bytes
         self.current_archive_size_bytes = 0
         if os.path.isfile(word_file):
             self.words = open(word_file).read().splitlines()
@@ -54,6 +53,7 @@ class Archiver(threading.Thread):
         self.picture_count = 0
         self.movie_count = 0
         self.audio_count = 0
+        self.unknown_count = 0
         self.earliest_date = 33134676164
         self.latest_date = 0
         self.earliest_timestamp = None
@@ -84,8 +84,20 @@ class Archiver(threading.Thread):
                     log.info('Skipping link: {f}'.format(f=file_path))
                     continue
 
-                # Skip if it is a file to be skipped
-                if f in skip_files:
+                # Skip if file matches a skip condition
+                skip_file = False
+                if f in skip_items['files']:
+                    log.debug('File matched skipped item: {f}'.format(f=f))
+                    skip_file = True
+                for skip_prefix in skip_items['prefixes']:
+                    if f.startswith(skip_prefix):
+                        log.debug('File matched skipped prefix: {p}'.format(p=skip_prefix))
+                        skip_file = True
+                for skip_ext in skip_items['extensions']:
+                    if f.endswith(skip_ext):
+                        log.debug('File matched skipped extension: {x}'.format(x=skip_ext))
+                        skip_file = True
+                if skip_file:
                     log.info('Skipping file: {f}'.format(f=file_path))
                     continue
 
@@ -98,13 +110,14 @@ class Archiver(threading.Thread):
                     file_type = MediaFileType.PICTURE
                     self.picture_count += 1
                 elif ext in extensions['vids']:
-                    file_type = MediaFileType.MOVIES
+                    file_type = MediaFileType.MOVIE
                     self.movie_count += 1
                 elif ext in extensions['audio']:
                     file_type = MediaFileType.AUDIO
                     self.audio_count += 1
                 else:
                     file_type = MediaFileType.UNKNOWN
+                    self.unknown_count += 1
 
                 # Get the creation time
                 creation_time = get_file_creation_time(file_path)
@@ -135,6 +148,7 @@ class Archiver(threading.Thread):
         log.info('Found {n} pictures'.format(n=str(self.picture_count)))
         log.info('Found {n} movies'.format(n=str(self.movie_count)))
         log.info('Found {n} audio files'.format(n=str(self.audio_count)))
+        log.info('Found {n} unknown files'.format(n=str(self.unknown_count)))
         log.info('Found earliest timestamp: {t}'.format(t=self.earliest_timestamp))
         log.info('Found latest timestamp: {t}'.format(t=self.latest_timestamp))
 
@@ -307,7 +321,10 @@ class Archiver(threading.Thread):
         for media_file in self.media_files:
             if media_file.archive_status == ArchiveStatus.COMPLETED:
                 continue
-            if archive_size_bytes > self.max_archive_size_bytes:
+            # if media_file.file_type == MediaFileType.UNKNOWN:
+            #    log.info('Unknown file type will not be archived: {f}'.format(f=media_file.file_name))
+            #    continue
+            if archive_size_bytes > max_archive_size_bytes:
                 log.info('Max archive size reached for: {d}'.format(d=self.archive_files_path))
                 if not last_timestamp:
                     raise ArchiverError('Last timestamp not found to create archive directory name')

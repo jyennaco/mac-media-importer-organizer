@@ -53,9 +53,18 @@ extensions = {
 """
 Files to skip archiving
 """
-skip_files = [
-    '.DS_Store'
-]
+skip_items = {
+    'files': [
+        '.DS_Store'
+    ],
+    'extensions': [
+        'zip'
+    ],
+    'prefixes': [
+        '._',
+        '~'
+    ]
+}
 
 """
 Directories used to stage files in directories
