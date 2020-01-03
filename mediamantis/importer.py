@@ -117,15 +117,15 @@ class S3Importer(object):
             log.info('Completed thread group: {n}'.format(n=str(thread_group_num)))
             thread_group_num += 1
 
-        # Log successful or failed imports
+        # Log successful or failed imports to the respective files
         successful_imports = ''
         failed_imports = ''
         for imp in self.threads:
             if imp.failed_import:
                 failed_imports += imp.s3_key + '\n'
+                log.warning('Detected failed import: {k}'.format(k=imp.s3_key))
             else:
                 successful_imports += imp.s3_key + '\n'
-        
         if failed_imports == '':
             log.info('No failed imports detected!')
         else:
@@ -136,6 +136,10 @@ class S3Importer(object):
         else:
             with open(self.dirs.import_complete_file, 'a') as f:
                 f.write(successful_imports)
+
+        # Clean up downloaded and import files
+        for imp in self.threads:
+            imp.clean()
         log.info('Completed processing all thread groups')
 
 
