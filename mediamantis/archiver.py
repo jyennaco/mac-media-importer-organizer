@@ -172,6 +172,8 @@ class Archiver(threading.Thread):
         archive_info_file = os.path.join(archive_path, 'archive.txt')
         info_txt = 'Created by mediamantis version: {v}\n'.format(v=version())
         info_txt += 'Created on: {t}\n'.format(t=datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
+        info_txt += 'Created from: {d}\n'.format(d=self.dir_to_archive)
+        info_txt += 'Using ID word: {w}\n'.format(w=self.primary_id_word)
         with open(archive_info_file, 'w') as f:
             f.write(info_txt)
         log.info('Created archive info file: {f}'.format(f=archive_info_file))
