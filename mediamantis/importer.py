@@ -14,7 +14,6 @@ import random
 import shutil
 import threading
 import time
-import zipfile
 
 from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
@@ -22,10 +21,11 @@ from pycons3rt3.s3util import S3Util
 
 from .archiver import Archiver
 from .directories import Directories
-from .exceptions import ArchiverError, ImporterError
+from .exceptions import ArchiverError, ImporterError, ZipError
 from .mantistypes import ImportStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions
+from .zip import unzip_archive
 
 
 mod_logger = Logify.get_name() + '.importer'
@@ -38,9 +38,27 @@ class S3Importer(object):
         self.s3_bucket = s3_bucket
         self.s3 = S3Util(_bucket_name=s3_bucket)
         self.media_import_root = media_import_root
+        self.dirs = Directories(media_root=media_import_root)
+        self.completed_archives = []
         self.filtered_keys = []
         self.threads = []
         self.max_simultaneous_threads = 3
+
+    def read_completed_imports(self):
+        """Reads the completed imports file
+
+        """
+        log = logging.getLogger(self.cls_logger + '.read_completed_imports')
+
+        # Ensure the file is found
+        if not os.path.isfile(self.dirs.import_complete_file):
+            log.warning('No archive complete file found: {f}'.format(f=self.dirs.import_complete_file))
+            return
+
+        # Read the file contents
+        with open(self.dirs.import_complete_file, 'r') as f:
+            content = f.readlines()
+        self.completed_archives = [x.strip() for x in content]
 
     def process_s3_imports(self, filters=None):
         """Determine which S3 keys to import
@@ -50,17 +68,28 @@ class S3Importer(object):
         """
         log = logging.getLogger(self.cls_logger + '.process_s3_imports')
         s3_keys = self.s3.find_keys(regex='')
+        self.read_completed_imports()
 
+        matching_keys = []
         if filters:
             if not isinstance(filters, list):
                 raise ImporterError('filters arg must be a list, found: {t}'.format(t=filters.__class__.__name__))
             for s3_key in s3_keys:
                 for a_filter in filters:
                     if a_filter in s3_key:
-                        log.info('Found S3 matching key to import: {k}'.format(k=s3_key))
-                        self.filtered_keys.append(s3_key)
+                        log.info('Found S3 matching key: {k}'.format(k=s3_key))
+                        matching_keys.append(s3_key)
         else:
-            self.filtered_keys = s3_keys
+            log.info('No filters specified, using all S3 keys...')
+            matching_keys = s3_keys
+
+        # Filter archive files already completed
+        for matching_key in matching_keys:
+            if matching_key not in self.completed_archives:
+                log.info('Found S3 key not already imported: {k}'.format(k=matching_key))
+                self.filtered_keys.append(matching_key)
+            else:
+                log.info('S3 key archive found already imported, will not be re-imported: {k}'.format(k=matching_key))
 
         if len(self.filtered_keys) < 1:
             log.info('No S3 keys found to import')
@@ -87,6 +116,26 @@ class S3Importer(object):
                 t.join()
             log.info('Completed thread group: {n}'.format(n=str(thread_group_num)))
             thread_group_num += 1
+
+        # Log successful or failed imports
+        successful_imports = ''
+        failed_imports = ''
+        for imp in self.threads:
+            if imp.failed_import:
+                failed_imports += imp.s3_key + '\n'
+            else:
+                successful_imports += imp.s3_key + '\n'
+        
+        if failed_imports == '':
+            log.info('No failed imports detected!')
+        else:
+            with open(self.dirs.failed_imports_file, 'a') as f:
+                f.write(failed_imports)
+        if successful_imports == '':
+            log.warning('No successful imports detected!')
+        else:
+            with open(self.dirs.import_complete_file, 'a') as f:
+                f.write(successful_imports)
         log.info('Completed processing all thread groups')
 
 
@@ -101,12 +150,14 @@ class Importer(threading.Thread):
         self.s3_key = s3_key
         self.dirs = Directories(media_root=media_import_root)
         self.extensions = extensions
+        self.downloaded_file = None
         self.file_import_count = 0
         self.picture_import_count = 0
         self.movie_import_count = 0
         self.audio_import_count = 0
         self.already_imported_count = 0
         self.not_imported_count = 0
+        self.failed_import = False
 
     def import_media_file(self, media_file):
         """Imports a media file
@@ -210,18 +261,24 @@ class Importer(threading.Thread):
                 log.info('Creating directory: {d}'.format(d=self.dirs.auto_import_dir))
                 os.makedirs(self.dirs.auto_import_dir, exist_ok=True)
             try:
-                downloaded_file = s3.download_file_by_key(key=self.s3_key, dest_dir=self.dirs.auto_import_dir)
+                self.downloaded_file = s3.download_file_by_key(key=self.s3_key, dest_dir=self.dirs.auto_import_dir)
             except S3UtilError as exc:
+                self.failed_import = True
                 raise ImporterError('Problem downloading key: {k}'.format(k=self.s3_key)) from exc
-            if not downloaded_file:
+            if not self.downloaded_file:
+                self.failed_import = True
                 raise ImporterError('Downloaded file not found for s3 key: {k}'.format(k=self.s3_key))
-            log.info('Attempting to unzip: {f}'.format(f=downloaded_file))
-            with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
-                zip_ref.extractall(self.dirs.auto_import_dir)
-            self.import_dir = downloaded_file.rstrip('.zip')
+            log.info('Attempting to unzip: {f}'.format(f=self.downloaded_file))
+            try:
+                self.import_dir = unzip_archive(zip_file=self.downloaded_file, output_dir=self.dirs.auto_import_dir)
+            except ZipError as exc:
+                self.failed_import = True
+                raise ImporterError('Problem extracting zip file: {z} to directory: {d}'.format(
+                    z=self.downloaded_file, d=self.dirs.auto_import_dir)) from exc
             log.info('Using extracted import directory: {d}'.format(d=self.import_dir))
 
         if not self.import_dir:
+            self.failed_import = True
             raise ImporterError('Import directory not set, cannot import!')
 
         log.info('Scanning directory for import: {d}'.format(d=self.import_dir))
@@ -229,6 +286,7 @@ class Importer(threading.Thread):
         try:
             arch.scan_archive()
         except ArchiverError as exc:
+            self.failed_import = True
             raise ImporterError('Problem scanning directory for import: {d}'.format(d=self.import_dir)) from exc
 
         for media_file in arch.media_files:
@@ -244,6 +302,7 @@ class Importer(threading.Thread):
             try:
                 self.import_media_file(media_file=media_file)
             except ImporterError as exc:
+                self.failed_import = True
                 raise ImporterError('Problem importing media file: {f}'.format(f=str(media_file))) from exc
         log.info('Completed processing media file imports from directory: {d}'.format(d=self.import_dir))
         log.info('Imported a total of {n} media files'.format(n=str(self.file_import_count)))
@@ -253,10 +312,24 @@ class Importer(threading.Thread):
         log.info('{n} media files already imported'.format(n=str(self.already_imported_count)))
         log.info('{n} files were not imported'.format(n=str(self.not_imported_count)))
 
+    def clean(self):
+        """Clean files used for import
+
+        return: True if successful, false otherwise
+        """
+        log = logging.getLogger(self.cls_logger + '.clean')
+        if self.downloaded_file:
+            log.info('Removing file: {f}'.format(f=self.downloaded_file))
+            os.remove(self.downloaded_file)
+        if self.import_dir:
+            if os.path.isdir(self.import_dir):
+                log.info('Removing directory: {d}'.format(d=self.import_dir))
+                shutil.rmtree(self.import_dir)
+
     def run(self):
         """Start a thread to process an import
 
-        :return: None
+        return: None
         """
         log = logging.getLogger(self.cls_logger + '.run')
         start_wait_sec = random.randint(1, 10)

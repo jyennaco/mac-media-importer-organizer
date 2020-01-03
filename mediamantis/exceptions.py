@@ -17,3 +17,7 @@ class ImporterError(Exception):
 
 class MantisError(Exception):
     """General error with Media Mantis"""
+
+
+class ZipError(Exception):
+    """Excepting during the zipping or unzipping process"""

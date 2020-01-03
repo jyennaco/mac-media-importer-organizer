@@ -15,17 +15,17 @@ import platform
 import shutil
 import threading
 
-from pycons3rt3.bash import zip_dir, CommandError
 from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
 import requests
 
 from .directories import Directories
-from .exceptions import ArchiverError
+from .exceptions import ArchiverError, ZipError
 from .mantistypes import ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions, max_archive_size_bytes, skip_items
 from .version import version
+from .zip import zip_dir
 
 
 mod_logger = Logify.get_name() + '.archiver'
@@ -277,7 +277,7 @@ class Archiver(threading.Thread):
             zip_path = archive_dir + '.zip'
             try:
                 zip_dir(dir_path=archive_dir, zip_file=zip_path)
-            except CommandError as exc:
+            except ZipError as exc:
                 raise ArchiverError('Problem creating zip file: {z}'.format(z=zip_path)) from exc
             self.archive_zip_list.append(zip_path)
             log.info('Created archive zip: {z}'.format(z=zip_path))
