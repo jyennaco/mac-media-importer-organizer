@@ -25,6 +25,7 @@ from .exceptions import ArchiverError
 from .mantistypes import ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions, max_archive_size_bytes, skip_items
+from .version import version
 
 
 mod_logger = Logify.get_name() + '.archiver'
@@ -163,6 +164,18 @@ class Archiver(threading.Thread):
         """
         return first_timestamp.split('-')[0] + '-' + last_timestamp.split('-')[0] + '_' + self.primary_id_word
 
+    def create_archive_info_file(self, archive_path):
+        """Creates an archive.txt path
+
+        """
+        log = logging.getLogger(self.cls_logger + '.create_archive_info_file')
+        archive_info_file = os.path.join(archive_path, 'archive.txt')
+        info_txt = 'Created by mediamantis version: {v}\n'.format(v=version())
+        info_txt += 'Created on: {t}\n'.format(t=datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
+        with open(archive_info_file, 'w') as f:
+            f.write(info_txt)
+        log.info('Created archive info file: {f}'.format(f=archive_info_file))
+
     def rename_archive_files_dir(self, first_timestamp, last_timestamp):
         """Renames the archive file directory using a specific name format
 
@@ -179,6 +192,7 @@ class Archiver(threading.Thread):
         except Exception as exc:
             raise ArchiverError('Problem renaming archive directory to: {n}'.format(n=new_path)) from exc
         self.archive_dir_list.append(new_path)
+        self.create_archive_info_file(archive_path=new_path)
 
     def update_archive_files_dir(self):
         """Updates the archive files dir name to be used for archiving

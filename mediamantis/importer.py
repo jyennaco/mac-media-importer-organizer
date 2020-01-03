@@ -10,10 +10,15 @@ Imports media files from a variety of sources
 import datetime
 import logging
 import os
+import random
 import shutil
 import threading
+import time
+import zipfile
 
+from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
+from pycons3rt3.s3util import S3Util
 
 from .archiver import Archiver
 from .directories import Directories
@@ -26,16 +31,76 @@ from .settings import extensions
 mod_logger = Logify.get_name() + '.importer'
 
 
+class S3Importer(object):
+
+    def __init__(self, s3_bucket, media_import_root=None):
+        self.cls_logger = mod_logger + '.S3Importer'
+        self.s3_bucket = s3_bucket
+        self.s3 = S3Util(_bucket_name=s3_bucket)
+        self.media_import_root = media_import_root
+        self.filtered_keys = []
+        self.threads = []
+        self.max_simultaneous_threads = 3
+
+    def process_s3_imports(self, filters=None):
+        """Determine which S3 keys to import
+
+        :returns: None
+        :raises: ImporterError
+        """
+        log = logging.getLogger(self.cls_logger + '.process_s3_imports')
+        s3_keys = self.s3.find_keys(regex='')
+
+        if filters:
+            if not isinstance(filters, list):
+                raise ImporterError('filters arg must be a list, found: {t}'.format(t=filters.__class__.__name__))
+            for s3_key in s3_keys:
+                for a_filter in filters:
+                    if a_filter in s3_key:
+                        log.info('Found S3 matching key to import: {k}'.format(k=s3_key))
+                        self.filtered_keys.append(s3_key)
+        else:
+            self.filtered_keys = s3_keys
+
+        if len(self.filtered_keys) < 1:
+            log.info('No S3 keys found to import')
+            return
+
+        for filtered_key in self.filtered_keys:
+            imp = Importer(
+                media_import_root=self.media_import_root,
+                s3_bucket=self.s3_bucket,
+                s3_key=filtered_key
+            )
+            self.threads.append(imp)
+
+        # Start threads 5 at a time
+        thread_group_num = 1
+        log.info('Starting threads in groups of: {n}'.format(n=str(self.max_simultaneous_threads)))
+        for thread_group in chunker(self.threads, self.max_simultaneous_threads):
+            log.info('Starting thread group: {n}'.format(n=str(thread_group_num)))
+            for thread in thread_group:
+                thread.start()
+
+            log.info('Waiting for completion of thread group: {n}'.format(n=str(thread_group_num)))
+            for t in thread_group:
+                t.join()
+            log.info('Completed thread group: {n}'.format(n=str(thread_group_num)))
+            thread_group_num += 1
+        log.info('Completed processing all thread groups')
+
+
 class Importer(threading.Thread):
 
-    def __init__(self, import_dir, media_import_root=None):
+    def __init__(self, import_dir=None, media_import_root=None, s3_bucket=None, s3_key=None):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Importer'
         self.import_dir = import_dir
         self.media_import_root = media_import_root
+        self.s3_bucket = s3_bucket
+        self.s3_key = s3_key
         self.dirs = Directories(media_root=media_import_root)
         self.extensions = extensions
-        self.arch = Archiver(dir_to_archive=import_dir)
         self.file_import_count = 0
         self.picture_import_count = 0
         self.movie_import_count = 0
@@ -138,13 +203,35 @@ class Importer(threading.Thread):
         raises: ImporterError
         """
         log = logging.getLogger(self.cls_logger + '.process_import')
+
+        if self.s3_key and self.s3_bucket:
+            s3 = S3Util(_bucket_name=self.s3_bucket)
+            if not os.path.isdir(self.dirs.auto_import_dir):
+                log.info('Creating directory: {d}'.format(d=self.dirs.auto_import_dir))
+                os.makedirs(self.dirs.auto_import_dir, exist_ok=True)
+            try:
+                downloaded_file = s3.download_file_by_key(key=self.s3_key, dest_dir=self.dirs.auto_import_dir)
+            except S3UtilError as exc:
+                raise ImporterError('Problem downloading key: {k}'.format(k=self.s3_key)) from exc
+            if not downloaded_file:
+                raise ImporterError('Downloaded file not found for s3 key: {k}'.format(k=self.s3_key))
+            log.info('Attempting to unzip: {f}'.format(f=downloaded_file))
+            with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
+                zip_ref.extractall(self.dirs.auto_import_dir)
+            self.import_dir = downloaded_file.rstrip('.zip')
+            log.info('Using extracted import directory: {d}'.format(d=self.import_dir))
+
+        if not self.import_dir:
+            raise ImporterError('Import directory not set, cannot import!')
+
         log.info('Scanning directory for import: {d}'.format(d=self.import_dir))
+        arch = Archiver(dir_to_archive=self.import_dir)
         try:
-            self.arch.scan_archive()
+            arch.scan_archive()
         except ArchiverError as exc:
             raise ImporterError('Problem scanning directory for import: {d}'.format(d=self.import_dir)) from exc
 
-        for media_file in self.arch.media_files:
+        for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
                 continue
             elif media_file.import_status == ImportStatus.ALREADY_EXISTS:
@@ -165,3 +252,19 @@ class Importer(threading.Thread):
         log.info('Imported {n} audio files'.format(n=str(self.audio_import_count)))
         log.info('{n} media files already imported'.format(n=str(self.already_imported_count)))
         log.info('{n} files were not imported'.format(n=str(self.not_imported_count)))
+
+    def run(self):
+        """Start a thread to process an import
+
+        :return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.run')
+        start_wait_sec = random.randint(1, 10)
+        log.info('Waiting {t} seconds to start...'.format(t=str(start_wait_sec)))
+        time.sleep(start_wait_sec)
+        log.info('Starting thread to import...')
+        self.process_import()
+
+
+def chunker(seq, size):
+    return (seq[pos:pos + size] for pos in range(0, len(seq), size))
