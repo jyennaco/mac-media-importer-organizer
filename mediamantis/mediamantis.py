@@ -33,7 +33,8 @@ setup_command_options = [
 # List of valid CLI commands
 valid_commands = setup_command_options + [
     'archive',
-    'import'
+    'import',
+    'rearchive'
 ]
 
 # String representation of valid commands
