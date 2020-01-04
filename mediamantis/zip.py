@@ -43,32 +43,33 @@ def unzip_archive(zip_file, output_dir):
     log.info('Extracting zip file [{z}] to directory: {d}'.format(z=zip_file, d=extracted_dir_path))
     extract_problem = False
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-        for f in zip_ref.infolist():
-            name, date_time = f.filename, f.date_time
-            log.debug('Found zip item: {n}'.format(n=name))
+        for zip_member in zip_ref.infolist():
+            log.debug('Found zip item: {n}'.format(n=zip_member.filename))
             skip = False
             for skip_prefix in skip_items['prefixes']:
-                if name.startswith(skip_prefix):
+                if zip_member.filename.startswith(skip_prefix):
                     skip = True
             if skip:
-                log.debug('Skipping item with a skippable prefix: {f}'.format(f=name))
+                log.debug('Skipping item with a skip-able prefix: {f}'.format(f=zip_member.filename))
                 continue
-            name = os.path.join(output_dir, name)
-            log.debug('Attempting to extract to: {n}'.format(n=name))
+            extracted_member_path = os.path.join(output_dir, zip_member.filename)
+            log.debug('Attempting to extract to: {n}'.format(n=extracted_member_path))
             try:
-                with open(name, 'wb') as outFile:
-                    outFile.write(zip_ref.open(f).read())
+                zip_ref.extract(zip_member, path=output_dir)
+                #with open(name, 'wb') as outFile:
+                #    outFile.write(zip_ref.open(f).read())
             except IsADirectoryError:
-                log.info('Skipping directory: {d}'.format(d=name))
+                log.info('Skipping directory: {d}'.format(d=zip_member.filename))
                 continue
             except zipfile.BadZipFile as exc:
-                log.warning('BadZipFile error detected extracting item: {n}\n{e}'.format(n=name, e=str(exc)))
+                log.warning('BadZipFile error detected extracting item: {n}\n{e}'.format(
+                    n=zip_member.filename, e=str(exc)))
                 extract_problem = True
                 continue
             else:
-                log.info('Extracted: {f}'.format(f=name))
-            date_time = time.mktime(date_time + (0, 0, -1))
-            os.utime(name, (date_time, date_time))
+                log.info('Extracted: {f}'.format(f=extracted_member_path))
+            date_time = time.mktime(zip_member.date_time + (0, 0, -1))
+            os.utime(extracted_member_path, (date_time, date_time))
     if extract_problem:
         raise ZipError('Detected a problem extracting directory file: {f}'.format(f=zip_file))
     log.info('Completed extraction to directory: {d}'.format(d=extracted_dir_path))

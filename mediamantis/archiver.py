@@ -521,18 +521,29 @@ class ReArchiver(threading.Thread):
             re_archive_handler.clean()
 
         # Check for failures
-        successful_re_archive = ''
+        successful_re_archives = ''
+        failed_re_archives = ''
         for re_archive_handler in self.threads:
             if re_archive_handler.failed_re_archive:
                 log.warning('Detected failed re-archive: {a}'.format(a=re_archive_handler.s3_key))
+                failed_re_archives += re_archive_handler.s3_key + '\n'
             else:
-                successful_re_archive += re_archive_handler.s3_key + '\n'
+                successful_re_archives += re_archive_handler.s3_key + '\n'
 
-        if successful_re_archive == '':
+        if successful_re_archives == '':
             log.warning('No successful re-archives detected!')
         else:
+            log.info('Adding successful archives to file: {f}'.format(f=self.dirs.re_archive_complete_file))
             with open(self.dirs.re_archive_complete_file, 'a') as f:
-                f.write(successful_re_archive)
+                f.write(successful_re_archives)
+
+        if failed_re_archives == '':
+            log.info('No failed re-archives detected!')
+        else:
+            log.info('Adding failed archives to file: {f}'.format(f=self.dirs.failed_re_archive_file))
+            with open(self.dirs.failed_re_archive_file, 'a') as f:
+                f.write(failed_re_archives)
+        log.info('Completed processing re-archives!')
 
 
 class ReArchiverHandler(threading.Thread):
