@@ -22,7 +22,7 @@ from pycons3rt3.s3util import S3Util
 from .archiver import Archiver
 from .directories import Directories
 from .exceptions import ArchiverError, ImporterError, ZipError
-from .mantistypes import ImportStatus, MediaFileType
+from .mantistypes import chunker, ImportStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions
 from .zip import unzip_archive
@@ -47,6 +47,7 @@ class S3Importer(object):
     def read_completed_imports(self):
         """Reads the completed imports file
 
+        return: None
         """
         log = logging.getLogger(self.cls_logger + '.read_completed_imports')
 
@@ -63,8 +64,8 @@ class S3Importer(object):
     def process_s3_imports(self, filters=None):
         """Determine which S3 keys to import
 
-        :returns: None
-        :raises: ImporterError
+        returns: None
+        raises: ImporterError
         """
         log = logging.getLogger(self.cls_logger + '.process_s3_imports')
         s3_keys = self.s3.find_keys(regex='')
@@ -103,7 +104,7 @@ class S3Importer(object):
             )
             self.threads.append(imp)
 
-        # Start threads 5 at a time
+        # Start threads in groups
         thread_group_num = 1
         log.info('Starting threads in groups of: {n}'.format(n=str(self.max_simultaneous_threads)))
         for thread_group in chunker(self.threads, self.max_simultaneous_threads):
@@ -127,6 +128,7 @@ class S3Importer(object):
                 failed_imports += imp.s3_key + '\n'
                 log.warning('Detected failed import: {k}'.format(k=imp.s3_key))
             else:
+                successful_count += 1
                 successful_imports += imp.s3_key + '\n'
         if failed_imports == '':
             log.info('No failed imports detected!')
@@ -136,7 +138,6 @@ class S3Importer(object):
         if successful_imports == '':
             log.warning('No successful imports detected!')
         else:
-            successful_count += 1
             with open(self.dirs.import_complete_file, 'a') as f:
                 f.write(successful_imports)
 
@@ -345,7 +346,3 @@ class Importer(threading.Thread):
         time.sleep(start_wait_sec)
         log.info('Starting thread to import...')
         self.process_import()
-
-
-def chunker(seq, size):
-    return (seq[pos:pos + size] for pos in range(0, len(seq), size))

@@ -16,7 +16,7 @@ import traceback
 
 from pycons3rt3.logify import Logify
 
-from .archiver import Archiver
+from .archiver import Archiver, ReArchiver
 from .exceptions import ArchiverError, ImporterError
 from .importer import Importer, S3Importer
 
@@ -141,6 +141,33 @@ def import_media(args):
         return 1
 
 
+def re_archive(args):
+    log = logging.getLogger(mod_logger + '.re_archive')
+
+    if args.s3bucket:
+        s3bucket = args.s3bucket
+        log.info('Uploading to S3 bucket: {b}'.format(b=s3bucket))
+    else:
+        log.error('--s3bucket arg is required')
+        return 1
+
+    media_inbox = None
+    if args.mediainbox:
+        media_inbox = args.mediainbox
+        log.info('Using media inbox: {d}'.format(d=media_inbox))
+
+    re = ReArchiver(s3_bucket=s3bucket, media_inbox=media_inbox)
+    try:
+        re.process_re_archive()
+    except ArchiverError as exc:
+        log.error('Problem processing re-archiver for S3 bucket: {b}\n{e}'.format(b=s3bucket, e=str(exc)))
+        traceback.print_exc()
+        return 2
+
+    log.info('Completed re-archiving!')
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
@@ -164,6 +191,8 @@ def main():
         res = archive(args)
     elif command == 'import':
         res = import_media(args)
+    elif command == 'rearchive':
+        res = re_archive(args)
     return res
 
 

@@ -14,18 +14,20 @@ import os
 import platform
 import shutil
 import threading
+import time
 
+from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
 import requests
 
 from .directories import Directories
 from .exceptions import ArchiverError, ZipError
-from .mantistypes import ArchiveStatus, MediaFileType
+from .mantistypes import chunker, ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions, max_archive_size_bytes, skip_items
 from .version import version
-from .zip import zip_dir
+from .zip import unzip_archive, zip_dir
 
 
 mod_logger = Logify.get_name() + '.archiver'
@@ -371,6 +373,197 @@ class Archiver(threading.Thread):
             self.zip_archives()
         except ArchiverError as exc:
             raise ArchiverError('Problem creating zip archives') from exc
+
+    def run(self):
+        """Start a thread to process an archive
+
+        return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.run')
+        start_wait_sec = random.randint(1, 10)
+        log.info('Waiting {t} seconds to start...'.format(t=str(start_wait_sec)))
+        time.sleep(start_wait_sec)
+        log.info('Starting thread to archive...')
+        self.process_archive()
+
+
+class ReArchiver(threading.Thread):
+
+    def __init__(self, s3_bucket, media_inbox=None):
+        threading.Thread.__init__(self)
+        self.cls_logger = mod_logger + '.ReArchiver'
+        self.s3_bucket = s3_bucket
+        self.dirs = Directories(media_inbox=media_inbox)
+        self.re_archive_s3_keys = []
+        self.filtered_keys = []
+        self.re_archive_complete_s3_keys = []
+        self.threads = []
+        self.max_simultaneous_threads = 3
+
+    def read_re_archive_file(self):
+        """Reads the re-archive file to get the list of files to re-archive
+
+        return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.read_re_archive_file')
+
+        # Ensure the file is found
+        if not os.path.isfile(self.dirs.re_archive_file):
+            log.warning('No re-archive file found: {f}'.format(f=self.dirs.re_archive_file))
+            return
+
+        # Read the file contents
+        with open(self.dirs.re_archive_file, 'r') as f:
+            content = f.readlines()
+        self.re_archive_s3_keys = [x.strip() for x in content]
+
+    def read_re_archive_complete_file(self):
+        """Reads the re-archive complete file to get the list of files already re-archived
+
+        return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.read_re_archive_complete_file')
+
+        # Ensure the file is found
+        if not os.path.isfile(self.dirs.re_archive_complete_file):
+            log.warning('No re-archive complete file found: {f}'.format(f=self.dirs.re_archive_complete_file))
+            return
+
+        # Read the file contents
+        with open(self.dirs.re_archive_complete_file, 'r') as f:
+            content = f.readlines()
+        self.re_archive_complete_s3_keys = [x.strip() for x in content]
+
+    def process_re_archive(self):
+        """Runs through the re-archiving process on the S3 keys listed in the rearchive.txt file
+
+        returns: None
+        raises: ArchiverError
+        """
+        log = logging.getLogger(self.cls_logger + '.process_re_archive')
+        self.read_re_archive_file()
+        self.read_re_archive_complete_file()
+        if len(self.re_archive_s3_keys) < 1:
+            raise ArchiverError('So S3 keys found in the reachive.txt file')
+        s3 = S3Util(_bucket_name=self.s3_bucket)
+        s3_keys = s3.find_keys(regex='')
+        if not s3_keys:
+            raise ArchiverError('No keys found in S3 bucket: {b}'.format(b=self.s3_bucket))
+
+        for re_archive_s3_key in self.re_archive_s3_keys:
+            if re_archive_s3_key in s3_keys:
+                if re_archive_s3_key not in self.re_archive_complete_s3_keys:
+                    log.info('Found S3 key, not already re-archived: {k}'.format(k=re_archive_s3_key))
+                    self.filtered_keys.append(re_archive_s3_key)
+                else:
+                    log.info('Found S3 key, already re-archived: {k}'.format(k=re_archive_s3_key))
+            else:
+                log.warning('Matching S3 key not found for: {k}'.format(k=re_archive_s3_key))
+
+        # Create the archive_files directory
+        if not os.path.isdir(self.dirs.archive_files_dir):
+            log.info('Creating directory: {d}'.format(d=self.dirs.archive_files_dir))
+            os.makedirs(self.dirs.archive_files_dir, exist_ok=True)
+
+        log.info('Creating a list of threads...')
+        for filtered_key in self.filtered_keys:
+            self.threads.append(ReArchiverHandler(
+                s3=s3,
+                dirs=self.dirs,
+                s3_key=filtered_key
+            ))
+        log.info('Added {n} threads'.format(n=str(len(self.threads))))
+
+        # Start threads in groups
+        thread_group_num = 1
+        log.info('Starting threads in groups of: {n}'.format(n=str(self.max_simultaneous_threads)))
+        for thread_group in chunker(self.threads, self.max_simultaneous_threads):
+            log.info('Starting thread group: {n}'.format(n=str(thread_group_num)))
+            for thread in thread_group:
+                thread.start()
+
+            log.info('Waiting for completion of thread group: {n}'.format(n=str(thread_group_num)))
+            for t in thread_group:
+                t.join()
+            log.info('Completed thread group: {n}'.format(n=str(thread_group_num)))
+            thread_group_num += 1
+        log.info('Completed processing all thread groups')
+
+        # Check for failures
+        successful_re_archive = ''
+        for re_archive_handler in self.threads:
+            if re_archive_handler.failed_re_archive:
+                log.warning('Detected failed re-archive: {a}'.format(a=re_archive_handler.s3_key))
+            else:
+                successful_re_archive += re_archive_handler.s3_key + '\n'
+
+        if successful_re_archive == '':
+            log.warning('No successful re-archives detected!')
+        else:
+            with open(self.dirs.import_complete_file, 'a') as f:
+                f.write(successful_re_archive)
+
+
+class ReArchiverHandler(threading.Thread):
+
+    def __init__(self, s3, dirs, s3_key):
+        threading.Thread.__init__(self)
+        self.cls_logger = mod_logger + '.ReArchiverHandler'
+        self.s3 = s3
+        self.dirs = dirs
+        self.s3_key = s3_key
+        self.failed_re_archive = False
+        self.downloaded_file = None
+        self.dir_to_archive = None
+
+    def re_archive(self):
+        """Process re-archiving the S3 key
+
+        return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.re_archive')
+        log.info('Attempting to download: {k}'.format(k=self.s3_key))
+        try:
+            self.downloaded_file = self.s3.download_file_by_key(key=self.s3_key, dest_dir=self.dirs.archive_files_dir)
+        except S3UtilError as exc:
+            self.failed_re_archive = True
+            raise ArchiverError('Problem downloading key: {k}'.format(k=self.s3_key)) from exc
+        if not self.downloaded_file:
+            self.failed_re_archive = True
+            raise ArchiverError('Downloaded file not found for s3 key: {k}'.format(k=self.s3_key))
+        log.info('Attempting to unzip: {f}'.format(f=self.downloaded_file))
+        try:
+            self.dir_to_archive = unzip_archive(zip_file=self.downloaded_file, output_dir=self.dirs.auto_import_dir)
+        except ZipError as exc:
+            self.failed_re_archive = True
+            raise ArchiverError('Problem extracting zip file: {z} to directory: {d}'.format(
+                z=self.downloaded_file, d=self.dirs.auto_import_dir)) from exc
+        log.info('Using extracted archive directory: {d}'.format(d=self.dir_to_archive))
+
+        a = Archiver(dir_to_archive=self.dir_to_archive, media_inbox=self.dirs.media_inbox)
+        try:
+            a.process_archive()
+        except ArchiverError as exc:
+            self.failed_re_archive = True
+            raise ArchiverError('Problem creating archive for: {s}'.format(s=self.dir_to_archive)) from exc
+        log.info('Archive zip files created')
+
+    def run(self):
+        self.re_archive()
+
+    def clean(self):
+        """Removes downloaded files
+
+        return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.clean')
+        if self.downloaded_file:
+            log.info('Removing file: {f}'.format(f=self.downloaded_file))
+            os.remove(self.downloaded_file)
+        if self.dir_to_archive:
+            if os.path.isdir(self.dir_to_archive):
+                log.info('Removing archive directory: {d}'.format(d=self.dir_to_archive))
+                shutil.rmtree(self.dir_to_archive)
 
 
 def get_timestamp(elem):

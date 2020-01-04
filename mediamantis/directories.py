@@ -38,6 +38,8 @@ class Directories(object):
         self.archive_files_dir = self.media_inbox + os.sep + 'archive_files'
         self.import_complete_file = os.path.join(self.auto_import_dir, 'completed_imports.txt')
         self.failed_imports_file = os.path.join(self.auto_import_dir, 'failed_imports.txt')
+        self.re_archive_file = os.path.join(self.archive_files_dir, 'rearchive.txt')
+        self.re_archive_complete_file = os.path.join(self.archive_files_dir, 'rearchive_complete.txt')
 
         self.local_dirs = {
             'media_root': self.media_root,
