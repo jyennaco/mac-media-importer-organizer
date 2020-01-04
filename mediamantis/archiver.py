@@ -490,6 +490,11 @@ class ReArchiver(threading.Thread):
             thread_group_num += 1
         log.info('Completed processing all thread groups')
 
+        # Cleaning up files
+        log.info('Cleaning up files')
+        for re_archive_handler in self.threads:
+            re_archive_handler.clean()
+
         # Check for failures
         successful_re_archive = ''
         for re_archive_handler in self.threads:
