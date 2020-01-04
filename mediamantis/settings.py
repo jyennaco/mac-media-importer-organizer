@@ -57,7 +57,8 @@ skip_items = {
     ],
     'prefixes': [
         '._',
-        '~'
+        '~',
+        '__MACOSX'
     ]
 }
 

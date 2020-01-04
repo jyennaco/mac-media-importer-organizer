@@ -533,7 +533,7 @@ class ReArchiverHandler(threading.Thread):
             raise ArchiverError('Downloaded file not found for s3 key: {k}'.format(k=self.s3_key))
         log.info('Attempting to unzip: {f}'.format(f=self.downloaded_file))
         try:
-            self.dir_to_archive = unzip_archive(zip_file=self.downloaded_file, output_dir=self.dirs.auto_import_dir)
+            self.dir_to_archive = unzip_archive(zip_file=self.downloaded_file, output_dir=self.dirs.archive_files_dir)
         except ZipError as exc:
             self.failed_re_archive = True
             raise ArchiverError('Problem extracting zip file: {z} to directory: {d}'.format(

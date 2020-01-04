@@ -16,6 +16,7 @@ import zipfile
 from pycons3rt3.logify import Logify
 
 from .exceptions import ZipError
+from .settings import skip_items
 
 
 mod_logger = Logify.get_name() + '.zip'
@@ -43,7 +44,18 @@ def unzip_archive(zip_file, output_dir):
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
         for f in zip_ref.infolist():
             name, date_time = f.filename, f.date_time
+            skip = False
+            for skip_prefix in skip_items['prefixes']:
+                if name.startswith(skip_prefix):
+                    skip = True
+            if skip:
+                log.debug('Skipping item with a skippable prefix: {f}'.format(f=name))
+                continue
             name = os.path.join(output_dir, name)
+            log.debug('Extracting file: {n}'.format(n=name))
+            if os.path.isdir(name):
+                log.debug('Skipping directory: {d}'.format(d=name))
+                continue
             with open(name, 'wb') as outFile:
                 outFile.write(zip_ref.open(f).read())
             date_time = time.mktime(date_time + (0, 0, -1))
