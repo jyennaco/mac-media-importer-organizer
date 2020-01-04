@@ -470,7 +470,8 @@ class ReArchiver(threading.Thread):
             self.threads.append(ReArchiverHandler(
                 s3=s3,
                 dirs=self.dirs,
-                s3_key=filtered_key
+                s3_key=filtered_key,
+                s3_bucket=self.s3_bucket
             ))
         log.info('Added {n} threads'.format(n=str(len(self.threads))))
 
@@ -500,18 +501,19 @@ class ReArchiver(threading.Thread):
         if successful_re_archive == '':
             log.warning('No successful re-archives detected!')
         else:
-            with open(self.dirs.import_complete_file, 'a') as f:
+            with open(self.dirs.re_archive_complete_file, 'a') as f:
                 f.write(successful_re_archive)
 
 
 class ReArchiverHandler(threading.Thread):
 
-    def __init__(self, s3, dirs, s3_key):
+    def __init__(self, s3, dirs, s3_key, s3_bucket):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.ReArchiverHandler'
         self.s3 = s3
         self.dirs = dirs
         self.s3_key = s3_key
+        self.s3_bucket = s3_bucket
         self.failed_re_archive = False
         self.downloaded_file = None
         self.dir_to_archive = None
@@ -547,6 +549,12 @@ class ReArchiverHandler(threading.Thread):
             self.failed_re_archive = True
             raise ArchiverError('Problem creating archive for: {s}'.format(s=self.dir_to_archive)) from exc
         log.info('Archive zip files created')
+
+        log.info('Uploading to S3 bucket: {b}'.format(b=self.s3_bucket))
+        try:
+            a.upload_to_s3(bucket_name=self.s3_bucket)
+        except ArchiverError as exc:
+            raise ArchiverError('Problem uploading to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
 
     def run(self):
         self.re_archive()
