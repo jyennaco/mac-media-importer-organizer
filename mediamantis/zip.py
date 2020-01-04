@@ -53,11 +53,19 @@ def unzip_archive(zip_file, output_dir):
                 continue
             name = os.path.join(output_dir, name)
             log.debug('Extracting file: {n}'.format(n=name))
-            if os.path.isdir(name):
+            if os.path.isfile(name):
+                try:
+                    with open(name, 'wb') as outFile:
+                        outFile.write(zip_ref.open(f).read())
+                except IsADirectoryError as exc:
+                    log.warning('Skipping directory: {d}'.format(d=name))
+                    continue
+            elif os.path.isdir(name):
                 log.debug('Skipping directory: {d}'.format(d=name))
                 continue
-            with open(name, 'wb') as outFile:
-                outFile.write(zip_ref.open(f).read())
+            else:
+                log.debug('Skipping archive item, not sure of type: {i}'.format(i=name))
+                continue
             date_time = time.mktime(date_time + (0, 0, -1))
             os.utime(name, (date_time, date_time))
     log.info('Completed extraction to directory: {d}'.format(d=extracted_dir_path))
