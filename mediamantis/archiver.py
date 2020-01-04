@@ -276,6 +276,10 @@ class Archiver(threading.Thread):
         :raises: ArchiverError
         """
         log = logging.getLogger(self.cls_logger + '.zip_archives')
+        if len(self.archive_dir_list) < 1:
+            log.info('No archive directories to zip')
+            return
+        log.info('Creating {n} zip archives'.format(n=str(len(self.archive_dir_list))))
         for archive_dir in self.archive_dir_list:
             log.info('Found archive dir to zip: {d}'.format(d=archive_dir))
             zip_path = archive_dir + '.zip'
@@ -285,6 +289,7 @@ class Archiver(threading.Thread):
                 raise ArchiverError('Problem creating zip file: {z}'.format(z=zip_path)) from exc
             self.archive_zip_list.append(zip_path)
             log.info('Created archive zip: {z}'.format(z=zip_path))
+        log.info('Completed creating {n} zip archives'.format(n=str(len(self.archive_dir_list))))
 
     def upload_to_s3(self, bucket_name):
         """Uploads the zip archives to AWS S3 buckets
@@ -295,7 +300,11 @@ class Archiver(threading.Thread):
         """
         log = logging.getLogger(self.cls_logger + '.upload_to_s3')
         s3 = S3Util(_bucket_name=bucket_name)
-        log.info('Attempting to upload archive zip files to S3 bucket: {b}'.format(b=bucket_name))
+        if len(self.archive_zip_list) < 1:
+            log.info('No archive zip files to upload')
+            return
+        log.info('Attempting to upload {n} archive zip files to S3 bucket: {b}'.format(
+            n=str(len(self.archive_zip_list)), b=bucket_name))
         for archive_zip in self.archive_zip_list:
             log.info('Uploading zip to S3: {z}'.format(z=archive_zip))
             key = archive_zip.split(os.sep)[-1]
@@ -304,6 +313,7 @@ class Archiver(threading.Thread):
                     z=archive_zip, b=bucket_name, k=key
                 ))
             log.info('Completed uploading key: {k}'.format(k=key))
+        log.info('Completed uploading {n} archive zip files to S3'.format(n=str(len(self.archive_zip_list))))
 
     def process_archive(self):
         """Creates zip archives of media files in a directory with a maximum size
@@ -385,6 +395,21 @@ class Archiver(threading.Thread):
         time.sleep(start_wait_sec)
         log.info('Starting thread to archive...')
         self.process_archive()
+
+    def clean(self):
+        """Cleans archive zip files and directories
+
+        return: None
+        """
+        log = logging.getLogger(self.cls_logger + '.clean')
+        for archive_zip in self.archive_zip_list:
+            if os.path.isfile(archive_zip):
+                log.info('Removing archive zip: {z}'.format(z=archive_zip))
+                os.remove(archive_zip)
+        for archive_dir in self.archive_dir_list:
+            if os.path.isdir(archive_dir):
+                log.info('Removing archive directory: {d}'.format(d=archive_dir))
+                shutil.rmtree(archive_dir)
 
 
 class ReArchiver(threading.Thread):
@@ -547,6 +572,7 @@ class ReArchiverHandler(threading.Thread):
                 z=self.downloaded_file, d=self.dirs.auto_import_dir)) from exc
         log.info('Using extracted archive directory: {d}'.format(d=self.dir_to_archive))
 
+        # Process archiving the directory
         a = Archiver(dir_to_archive=self.dir_to_archive, media_inbox=self.dirs.media_inbox)
         try:
             a.process_archive()
@@ -560,6 +586,11 @@ class ReArchiverHandler(threading.Thread):
             a.upload_to_s3(bucket_name=self.s3_bucket)
         except ArchiverError as exc:
             raise ArchiverError('Problem uploading to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
+        for new_archive in a.archive_zip_list:
+            new_archive = new_archive.split(os.sep)[-1]
+            log.info('Created and uploaded new archive from {a}: {n}'.format(a=self.s3_key, n=new_archive))
+        a.clean()
+        log.info('Completed re-archiving: {a}'.format(a=self.s3_key))
 
     def run(self):
         self.re_archive()
