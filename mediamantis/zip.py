@@ -40,10 +40,12 @@ def unzip_archive(zip_file, output_dir):
     if not os.path.isdir(extracted_dir_path):
         log.info('Creating extraction directory: {d}'.format(d=extracted_dir_path))
         os.makedirs(extracted_dir_path, exist_ok=True)
-    log.info('Extracting zip file {z} to directory: {d}'.format(z=zip_file, d=extracted_dir_path))
+    log.info('Extracting zip file [{z}] to directory: {d}'.format(z=zip_file, d=extracted_dir_path))
+    extract_problem = False
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
         for f in zip_ref.infolist():
             name, date_time = f.filename, f.date_time
+            log.debug('Found zip item: {n}'.format(n=name))
             skip = False
             for skip_prefix in skip_items['prefixes']:
                 if name.startswith(skip_prefix):
@@ -52,17 +54,23 @@ def unzip_archive(zip_file, output_dir):
                 log.debug('Skipping item with a skippable prefix: {f}'.format(f=name))
                 continue
             name = os.path.join(output_dir, name)
-            log.debug('Attempting to extract: {n}'.format(n=name))
+            log.debug('Attempting to extract to: {n}'.format(n=name))
             try:
                 with open(name, 'wb') as outFile:
                     outFile.write(zip_ref.open(f).read())
             except IsADirectoryError:
                 log.info('Skipping directory: {d}'.format(d=name))
                 continue
+            except zipfile.BadZipFile as exc:
+                log.warning('BadZipFile error detected extracting item: {n}\n{e}'.format(n=name, e=str(exc)))
+                extract_problem = True
+                continue
             else:
                 log.info('Extracted: {f}'.format(f=name))
             date_time = time.mktime(date_time + (0, 0, -1))
             os.utime(name, (date_time, date_time))
+    if extract_problem:
+        raise ZipError('Detected a problem extracting directory file: {f}'.format(f=zip_file))
     log.info('Completed extraction to directory: {d}'.format(d=extracted_dir_path))
     return extracted_dir_path
 
