@@ -36,7 +36,11 @@ class S3Importer(object):
     def __init__(self, s3_bucket, media_import_root=None):
         self.cls_logger = mod_logger + '.S3Importer'
         self.s3_bucket = s3_bucket
-        self.s3 = S3Util(_bucket_name=s3_bucket)
+        try:
+            self.s3 = S3Util(_bucket_name=self.s3_bucket)
+        except S3UtilError as exc:
+            self.failed_import = True
+            raise ImporterError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
         self.media_import_root = media_import_root
         self.dirs = Directories(media_root=media_import_root)
         self.completed_archives = []
@@ -265,7 +269,11 @@ class Importer(threading.Thread):
         log = logging.getLogger(self.cls_logger + '.process_import')
 
         if self.s3_key and self.s3_bucket:
-            s3 = S3Util(_bucket_name=self.s3_bucket)
+            try:
+                s3 = S3Util(_bucket_name=self.s3_bucket)
+            except S3UtilError as exc:
+                self.failed_import = True
+                raise ImporterError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
             if not os.path.isdir(self.dirs.auto_import_dir):
                 log.info('Creating directory: {d}'.format(d=self.dirs.auto_import_dir))
                 os.makedirs(self.dirs.auto_import_dir, exist_ok=True)

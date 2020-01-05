@@ -299,7 +299,10 @@ class Archiver(threading.Thread):
         :raises: ArchiverError
         """
         log = logging.getLogger(self.cls_logger + '.upload_to_s3')
-        s3 = S3Util(_bucket_name=bucket_name)
+        try:
+            s3 = S3Util(_bucket_name=bucket_name)
+        except S3UtilError as exc:
+            raise ArchiverError('Problem connecting to S3 bucket: {b}'.format(b=bucket_name)) from exc
         if len(self.archive_zip_list) < 1:
             log.info('No archive zip files to upload')
             return
@@ -470,7 +473,10 @@ class ReArchiver(threading.Thread):
         self.read_re_archive_complete_file()
         if len(self.re_archive_s3_keys) < 1:
             raise ArchiverError('So S3 keys found in the reachive.txt file')
-        s3 = S3Util(_bucket_name=self.s3_bucket)
+        try:
+            s3 = S3Util(_bucket_name=self.s3_bucket)
+        except S3UtilError as exc:
+            raise ArchiverError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
         s3_keys = s3.find_keys(regex='')
         if not s3_keys:
             raise ArchiverError('No keys found in S3 bucket: {b}'.format(b=self.s3_bucket))
