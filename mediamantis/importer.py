@@ -18,11 +18,12 @@ import time
 from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
+from pycons3rt3.slack import SlackAttachment, SlackMessage
 
 from .archiver import Archiver
 from .directories import Directories
 from .exceptions import ArchiverError, ImporterError, ZipError
-from .mantistypes import chunker, ImportStatus, MediaFileType
+from .mantistypes import chunker, get_slack_webhook, ImportStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions
 from .zip import unzip_archive
@@ -171,6 +172,32 @@ class Importer(threading.Thread):
         self.already_imported_count = 0
         self.not_imported_count = 0
         self.failed_import = False
+        slack_webhook = get_slack_webhook(self.dirs)
+        if slack_webhook:
+            slack_text = 'Importer'
+            if s3_key:
+                slack_text += ': S3 key: {k}'.format(k=s3_key)
+            elif import_dir:
+                slack_text += ': Local dir: {d}'.format(d=import_dir)
+            self.slack_msg = SlackMessage(webhook_url=slack_webhook, text=slack_text)
+        else:
+            self.slack_msg = None
+
+    def slack_success(self, msg):
+        """Send successful Slack message"""
+        if not self.slack_msg:
+            return
+        attachment = SlackAttachment(fallback=msg, text=msg, color='good')
+        self.slack_msg.add_attachment(attachment)
+        self.slack_msg.send()
+
+    def slack_failure(self, msg):
+        """Send failed Slack message"""
+        if not self.slack_msg:
+            return
+        attachment = SlackAttachment(fallback=msg, text=msg, color='danger')
+        self.slack_msg.add_attachment(attachment)
+        self.slack_msg.send()
 
     def import_media_file(self, media_file):
         """Imports a media file
@@ -273,7 +300,9 @@ class Importer(threading.Thread):
                 s3 = S3Util(_bucket_name=self.s3_bucket)
             except S3UtilError as exc:
                 self.failed_import = True
-                raise ImporterError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
+                msg = 'Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)
+                self.slack_failure(msg)
+                raise ImporterError(msg) from exc
             if not os.path.isdir(self.dirs.auto_import_dir):
                 log.info('Creating directory: {d}'.format(d=self.dirs.auto_import_dir))
                 os.makedirs(self.dirs.auto_import_dir, exist_ok=True)
@@ -281,22 +310,30 @@ class Importer(threading.Thread):
                 self.downloaded_file = s3.download_file_by_key(key=self.s3_key, dest_dir=self.dirs.auto_import_dir)
             except S3UtilError as exc:
                 self.failed_import = True
-                raise ImporterError('Problem downloading key: {k}'.format(k=self.s3_key)) from exc
+                msg = 'Problem downloading key: {k}'.format(k=self.s3_key)
+                self.slack_failure(msg)
+                raise ImporterError(msg) from exc
             if not self.downloaded_file:
                 self.failed_import = True
-                raise ImporterError('Downloaded file not found for s3 key: {k}'.format(k=self.s3_key))
+                msg = 'Downloaded file not found for s3 key: {k}'.format(k=self.s3_key)
+                self.slack_failure(msg)
+                raise ImporterError(msg)
             log.info('Attempting to unzip: {f}'.format(f=self.downloaded_file))
             try:
                 self.import_dir = unzip_archive(zip_file=self.downloaded_file, output_dir=self.dirs.auto_import_dir)
             except ZipError as exc:
                 self.failed_import = True
-                raise ImporterError('Problem extracting zip file: {z} to directory: {d}'.format(
-                    z=self.downloaded_file, d=self.dirs.auto_import_dir)) from exc
+                msg = 'Problem extracting zip file: {z} to directory: {d}'.format(
+                    z=self.downloaded_file, d=self.dirs.auto_import_dir)
+                self.slack_failure(msg)
+                raise ImporterError(msg) from exc
             log.info('Using extracted import directory: {d}'.format(d=self.import_dir))
 
         if not self.import_dir:
             self.failed_import = True
-            raise ImporterError('Import directory not set, cannot import!')
+            msg = 'Import directory not set, cannot import!'
+            self.slack_failure(msg)
+            raise ImporterError(msg)
 
         log.info('Scanning directory for import: {d}'.format(d=self.import_dir))
         arch = Archiver(dir_to_archive=self.import_dir)
@@ -304,7 +341,9 @@ class Importer(threading.Thread):
             arch.scan_archive()
         except ArchiverError as exc:
             self.failed_import = True
-            raise ImporterError('Problem scanning directory for import: {d}'.format(d=self.import_dir)) from exc
+            msg = 'Problem scanning directory for import: {d}'.format(d=self.import_dir)
+            self.slack_failure(msg)
+            raise ImporterError(msg) from exc
 
         for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
@@ -320,14 +359,18 @@ class Importer(threading.Thread):
                 self.import_media_file(media_file=media_file)
             except ImporterError as exc:
                 self.failed_import = True
-                raise ImporterError('Problem importing media file: {f}'.format(f=str(media_file))) from exc
-        log.info('Completed processing media file imports from directory: {d}'.format(d=self.import_dir))
-        log.info('Imported a total of {n} media files'.format(n=str(self.file_import_count)))
-        log.info('Imported {n} pictures'.format(n=str(self.picture_import_count)))
-        log.info('Imported {n} movies'.format(n=str(self.movie_import_count)))
-        log.info('Imported {n} audio files'.format(n=str(self.audio_import_count)))
-        log.info('{n} media files already imported'.format(n=str(self.already_imported_count)))
-        log.info('{n} files were not imported'.format(n=str(self.not_imported_count)))
+                msg = 'Problem importing media file: {f}'.format(f=str(media_file))
+                self.slack_failure(msg)
+                raise ImporterError(msg) from exc
+        msg = 'Completed processing media file imports from directory: {d}\n'.format(d=self.import_dir)
+        msg += 'Imported a total of {n} media files\n'.format(n=str(self.file_import_count))
+        msg += 'Imported {n} pictures\n'.format(n=str(self.picture_import_count))
+        msg += 'Imported {n} movies\n'.format(n=str(self.movie_import_count))
+        msg += 'Imported {n} audio files\n'.format(n=str(self.audio_import_count))
+        msg += '{n} media files already imported\n'.format(n=str(self.already_imported_count))
+        msg += '{n} files were not imported'.format(n=str(self.not_imported_count))
+        log.info(msg)
+        self.slack_success(msg)
 
     def clean(self):
         """Clean files used for import

@@ -56,8 +56,6 @@ def unzip_archive(zip_file, output_dir):
             log.debug('Attempting to extract to: {n}'.format(n=extracted_member_path))
             try:
                 zip_ref.extract(zip_member, path=output_dir)
-                #with open(name, 'wb') as outFile:
-                #    outFile.write(zip_ref.open(f).read())
             except IsADirectoryError:
                 log.info('Skipping directory: {d}'.format(d=zip_member.filename))
                 continue

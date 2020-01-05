@@ -19,11 +19,12 @@ import time
 from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
+from pycons3rt3.slack import SlackAttachment, SlackMessage
 import requests
 
 from .directories import Directories
 from .exceptions import ArchiverError, ZipError
-from .mantistypes import chunker, ArchiveStatus, MediaFileType
+from .mantistypes import chunker, get_slack_webhook, ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions, max_archive_size_bytes, skip_items
 from .version import version
@@ -67,6 +68,27 @@ class Archiver(threading.Thread):
         self.archive_dir_list = []
         self.archive_zip_list = []
         self.s3bucket = None
+        slack_webhook = get_slack_webhook(self.dirs)
+        if slack_webhook:
+            self.slack_msg = SlackMessage(webhook_url=slack_webhook, text='Archiver: {d}'.format(d=dir_to_archive))
+        else:
+            self.slack_msg = None
+
+    def slack_success(self, msg):
+        """Send successful Slack message"""
+        if not self.slack_msg:
+            return
+        attachment = SlackAttachment(fallback=msg, text=msg, color='good')
+        self.slack_msg.add_attachment(attachment)
+        self.slack_msg.send()
+
+    def slack_failure(self, msg):
+        """Send failed Slack message"""
+        if not self.slack_msg:
+            return
+        attachment = SlackAttachment(fallback=msg, text=msg, color='danger')
+        self.slack_msg.add_attachment(attachment)
+        self.slack_msg.send()
 
     def scan_archive(self):
         """Scans the archive for info about the files
@@ -330,22 +352,30 @@ class Archiver(threading.Thread):
         try:
             self.scan_archive()
         except ArchiverError as exc:
-            raise ArchiverError('Problem scanning archive') from exc
+            msg = 'Problem scanning archive: {d}'.format(d=self.dir_to_archive)
+            self.slack_failure(msg)
+            raise ArchiverError(msg) from exc
 
         # Exit if no media files are found
         if len(self.media_files) < 1:
-            log.info('No media files found to archive')
+            msg = 'No media files found to archive in directory: {d}'.format(d=self.dir_to_archive)
+            self.slack_failure(msg)
+            log.info(msg)
             return
 
         # Create the archive directory
         try:
             os.makedirs(self.archive_files_path, exist_ok=True)
         except Exception as exc:
-            raise ArchiverError('Problem creating directory: {d}'.format(d=self.archive_files_path)) from exc
+            msg = 'Problem creating directory: {d}'.format(d=self.archive_files_path)
+            self.slack_failure(msg)
+            raise ArchiverError(msg) from exc
 
         # Ensure the destination has enough space
         if not self.verify_disk_space():
-            raise ArchiverError('Insufficient disk space available to create archives')
+            msg = 'Insufficient disk space available to create archives in: {d}'.format(d=self.archive_files_path)
+            self.slack_failure(msg)
+            raise ArchiverError(msg)
 
         archive_size_bytes = 0
         first_timestamp = self.media_files[0].creation_timestamp
@@ -360,7 +390,9 @@ class Archiver(threading.Thread):
             if archive_size_bytes > max_archive_size_bytes:
                 log.info('Max archive size reached for: {d}'.format(d=self.archive_files_path))
                 if not last_timestamp:
-                    raise ArchiverError('Last timestamp not found to create archive directory name')
+                    msg = 'Last timestamp not found to create archive directory name'
+                    self.slack_failure(msg)
+                    raise ArchiverError(msg)
                 # Rename the directory
                 self.rename_archive_files_dir(
                     first_timestamp=first_timestamp,
@@ -372,7 +404,9 @@ class Archiver(threading.Thread):
             try:
                 self.archive_file(media_file=media_file)
             except ArchiverError as exc:
-                raise ArchiverError('Problem archiving media file: {f}'.format(f=str(media_file))) from exc
+                msg = 'Problem archiving media file: {f}'.format(f=str(media_file))
+                self.slack_failure(msg)
+                raise ArchiverError(msg) from exc
             last_timestamp = media_file.creation_timestamp
             archive_size_bytes += media_file.size_bytes
             count += 1
@@ -385,7 +419,12 @@ class Archiver(threading.Thread):
         try:
             self.zip_archives()
         except ArchiverError as exc:
-            raise ArchiverError('Problem creating zip archives') from exc
+            msg = 'Problem creating zip archives'
+            self.slack_failure(msg)
+            raise ArchiverError(msg) from exc
+        msg = 'Completed archiving directory: {d}, to: {a}'.format(d=self.dir_to_archive, a=self.archive_files_path)
+        log.info(msg)
+        self.slack_success(msg)
 
     def run(self):
         """Start a thread to process an archive

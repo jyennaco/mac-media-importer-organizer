@@ -8,6 +8,7 @@ Data types for mediamantis
 """
 
 import enum
+import os
 
 
 class MediaFileType(enum.Enum):
@@ -31,3 +32,11 @@ class ImportStatus(enum.Enum):
 
 def chunker(seq, size):
     return (seq[pos:pos + size] for pos in range(0, len(seq), size))
+
+
+def get_slack_webhook(dirs):
+    if not os.path.isfile(dirs.slack_webhook_file):
+        return
+    with open(dirs.slack_webhook_file, 'r') as f:
+        contents = f.read()
+    return contents.strip()
