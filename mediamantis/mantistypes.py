@@ -28,6 +28,7 @@ class ImportStatus(enum.Enum):
     PENDING = 2
     ALREADY_EXISTS = 3
     DO_NOT_IMPORT = 4
+    UNIMPORTED = 5
 
 
 def chunker(seq, size):

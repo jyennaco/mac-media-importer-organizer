@@ -34,7 +34,7 @@ mod_logger = Logify.get_name() + '.importer'
 
 class S3Importer(object):
 
-    def __init__(self, s3_bucket, media_import_root=None):
+    def __init__(self, s3_bucket, media_import_root=None, un_import=False):
         self.cls_logger = mod_logger + '.S3Importer'
         self.s3_bucket = s3_bucket
         try:
@@ -43,6 +43,7 @@ class S3Importer(object):
             self.failed_import = True
             raise ImporterError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
         self.media_import_root = media_import_root
+        self.un_import = un_import
         self.dirs = Directories(media_root=media_import_root)
         self.completed_archives = []
         self.filtered_keys = []
@@ -62,9 +63,11 @@ class S3Importer(object):
             return
 
         # Read the file contents
+        log.info('Reading completed imports from file: {f}'.format(f=self.dirs.import_complete_file))
         with open(self.dirs.import_complete_file, 'r') as f:
             content = f.readlines()
         self.completed_archives = [x.strip() for x in content]
+        log.info('Found {n} completed archives'.format(n=str(len(self.completed_archives))))
 
     def process_s3_imports(self, filters=None):
         """Determine which S3 keys to import
@@ -74,7 +77,8 @@ class S3Importer(object):
         """
         log = logging.getLogger(self.cls_logger + '.process_s3_imports')
         s3_keys = self.s3.find_keys(regex='')
-        self.read_completed_imports()
+        if not self.un_import:
+            self.read_completed_imports()
 
         matching_keys = []
         if filters:
@@ -90,22 +94,27 @@ class S3Importer(object):
             matching_keys = s3_keys
 
         # Filter archive files already completed
+        log.info('Found {n} matching S3 keys'.format(n=str(len(matching_keys))))
         for matching_key in matching_keys:
-            if matching_key not in self.completed_archives:
-                log.info('Found S3 key not already imported: {k}'.format(k=matching_key))
+            if self.un_import:
+                self.filtered_keys.append(matching_key)
+            elif matching_key not in self.completed_archives:
+                log.info('S3 key not already imported: {k}'.format(k=matching_key))
                 self.filtered_keys.append(matching_key)
             else:
-                log.info('S3 key archive found already imported, will not be re-imported: {k}'.format(k=matching_key))
+                log.info('S3 key already imported, will not be re-imported: {k}'.format(k=matching_key))
 
         if len(self.filtered_keys) < 1:
-            log.info('No S3 keys found to import')
+            log.info('No S3 keys found to import/un-import')
             return
+        log.info('Found {n} filtered keys to import/un-import'.format(n=str(len(self.filtered_keys))))
 
         for filtered_key in self.filtered_keys:
             imp = Importer(
                 media_import_root=self.media_import_root,
                 s3_bucket=self.s3_bucket,
-                s3_key=filtered_key
+                s3_key=filtered_key,
+                un_import=self.un_import
             )
             self.threads.append(imp)
 
@@ -131,17 +140,17 @@ class S3Importer(object):
         for imp in self.threads:
             if imp.failed_import:
                 failed_imports += imp.s3_key + '\n'
-                log.warning('Detected failed import: {k}'.format(k=imp.s3_key))
+                log.warning('Detected failed import/un-import: {k}'.format(k=imp.s3_key))
             else:
                 successful_count += 1
                 successful_imports += imp.s3_key + '\n'
         if failed_imports == '':
-            log.info('No failed imports detected!')
+            log.info('No failed imports/un-imports detected!')
         else:
             with open(self.dirs.failed_imports_file, 'a') as f:
                 f.write(failed_imports)
         if successful_imports == '':
-            log.warning('No successful imports detected!')
+            log.warning('No successful imports/un-imports detected!')
         else:
             with open(self.dirs.import_complete_file, 'a') as f:
                 f.write(successful_imports)
@@ -150,18 +159,20 @@ class S3Importer(object):
         log.info('Cleaning up files...')
         for imp in self.threads:
             imp.clean()
-        log.info('Completed import of {n} archives:\n{t}'.format(n=str(successful_count), t=successful_imports))
+        log.info('Completed import/un-import of {n} archives:\n{t}'.format(
+            n=str(successful_count), t=successful_imports))
 
 
 class Importer(threading.Thread):
 
-    def __init__(self, import_dir=None, media_import_root=None, s3_bucket=None, s3_key=None):
+    def __init__(self, import_dir=None, media_import_root=None, s3_bucket=None, s3_key=None, un_import=False):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Importer'
         self.import_dir = import_dir
         self.media_import_root = media_import_root
         self.s3_bucket = s3_bucket
         self.s3_key = s3_key
+        self.un_import = un_import
         self.dirs = Directories(media_root=media_import_root)
         self.extensions = extensions
         self.downloaded_file = None
@@ -171,6 +182,7 @@ class Importer(threading.Thread):
         self.audio_import_count = 0
         self.already_imported_count = 0
         self.not_imported_count = 0
+        self.un_imported_count = 0
         self.failed_import = False
         slack_webhook = get_slack_webhook(self.dirs)
         if slack_webhook:
@@ -217,6 +229,11 @@ class Importer(threading.Thread):
 
         log.debug('Checking file for import: {f}'.format(f=media_file.file_path))
 
+        # Skip if archive.txt
+        if media_file.file_name == 'archive.txt':
+            log.debug('Skipping archive.txt file')
+            return
+
         # Check the import status
 
         # Determine the destination import directory based on file type
@@ -254,10 +271,19 @@ class Importer(threading.Thread):
         month_dir = os.path.join(year_dir, '{y}-{m}'.format(y=year, m=month))
         target_path = os.path.join(month_dir, target_filename)
 
-        if os.path.isfile(target_path):
+        if os.path.isfile(target_path) and not self.un_import:
             log.info('Found media file already imported: {f}'.format(f=target_path))
             media_file.import_status = ImportStatus.ALREADY_EXISTS
             self.already_imported_count += 1
+            return
+        elif os.path.isfile(target_path) and self.un_import:
+            log.info('Found media file to un-import: {f}'.format(f=target_path))
+            os.remove(target_path)
+            media_file.import_status = ImportStatus.UNIMPORTED
+            self.un_imported_count += 1
+            return
+        elif self.un_import:
+            log.info('File not found, no need to un-import: {f}'.format(f=target_path))
             return
 
         if not os.path.exists(year_dir):
@@ -352,23 +378,33 @@ class Importer(threading.Thread):
                 continue
             elif media_file.import_status == ImportStatus.DO_NOT_IMPORT:
                 continue
+            elif media_file.import_status == ImportStatus.UNIMPORTED:
+                continue
             if media_file.file_type == MediaFileType.UNKNOWN:
-                log.info('Unknown file type will not be imported: {f}'.format(f=media_file.file_name))
+                log.info('Unknown file type will not be imported/un-imported: {f}'.format(f=media_file.file_name))
                 continue
             try:
                 self.import_media_file(media_file=media_file)
             except ImporterError as exc:
                 self.failed_import = True
-                msg = 'Problem importing media file: {f}'.format(f=str(media_file))
+                msg = 'Problem importing/un-importing media file: {f}'.format(f=str(media_file))
                 self.slack_failure(msg)
                 raise ImporterError(msg) from exc
-        msg = 'Completed processing media file imports from directory: {d}\n'.format(d=self.import_dir)
-        msg += 'Imported a total of {n} media files\n'.format(n=str(self.file_import_count))
-        msg += 'Imported {n} pictures\n'.format(n=str(self.picture_import_count))
-        msg += 'Imported {n} movies\n'.format(n=str(self.movie_import_count))
-        msg += 'Imported {n} audio files\n'.format(n=str(self.audio_import_count))
-        msg += '{n} media files already imported\n'.format(n=str(self.already_imported_count))
-        msg += '{n} files were not imported'.format(n=str(self.not_imported_count))
+        msg = 'Completed processing media files from directory: {d}\n'.format(d=self.import_dir)
+        if self.s3_key and not self.un_import:
+            msg += 'Imported media files from s3 key: {k}\n'.format(k=self.s3_key)
+        if self.s3_key and self.un_import:
+            msg += 'Un-imported media files from s3 key: {k}\n'.format(k=self.s3_key)
+        if not self.un_import:
+            msg += 'Imported a total of {n} media files\n'.format(n=str(self.file_import_count))
+            msg += 'Imported {n} pictures\n'.format(n=str(self.picture_import_count))
+            msg += 'Imported {n} movies\n'.format(n=str(self.movie_import_count))
+            msg += 'Imported {n} audio files\n'.format(n=str(self.audio_import_count))
+            msg += '{n} media files already imported\n'.format(n=str(self.already_imported_count))
+        if self.not_imported_count > 0:
+            msg += '{n} files were not imported'.format(n=str(self.not_imported_count))
+        if self.un_import:
+            msg += '{n} files were un-imported'.format(n=str(self.un_imported_count))
         log.info(msg)
         self.slack_success(msg)
 

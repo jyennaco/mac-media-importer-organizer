@@ -34,7 +34,8 @@ setup_command_options = [
 valid_commands = setup_command_options + [
     'archive',
     'import',
-    'rearchive'
+    'rearchive',
+    'unimport'
 ]
 
 # String representation of valid commands
@@ -77,6 +78,41 @@ def archive(args):
     return 0
 
 
+def import_media(args):
+    log = logging.getLogger(mod_logger + '.import_media')
+    if args.dir:
+        return import_media_from_local(args)
+    elif args.s3bucket:
+        return import_media_from_s3(args)
+    else:
+        log.error('--dir or --s3bucket arg is required')
+        return 1
+
+
+def import_media_from_local(args):
+    log = logging.getLogger(mod_logger + '.import_media_from_local')
+    if args.dir:
+        source_dir = args.dir
+    else:
+        log.error('--dir arg is required, set to the path of media files to archive')
+        return 1
+
+    root_import_dir = None
+    if args.rootimportdir:
+        root_import_dir = args.rootimportdir
+
+    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir)
+    try:
+        imp.process_import()
+    except ImporterError as exc:
+        log.error('Problem processing import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
+        traceback.print_exc()
+        return 2
+
+    log.info('Local media import completed!')
+    return 0
+
+
 def import_media_from_s3(args):
     log = logging.getLogger(mod_logger + '.import_media_from_s3')
     if args.s3bucket:
@@ -107,41 +143,6 @@ def import_media_from_s3(args):
     return 0
 
 
-def import_media_from_local(args):
-    log = logging.getLogger(mod_logger + '.import_media_from_local')
-    if args.dir:
-        source_dir = args.dir
-    else:
-        log.error('--dir arg is required, set to the path of media files to archive')
-        return 1
-
-    root_import_dir = None
-    if args.rootimportdir:
-        root_import_dir = args.rootimportdir
-
-    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir)
-    try:
-        imp.process_import()
-    except ImporterError as exc:
-        log.error('Problem processing import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
-        traceback.print_exc()
-        return 2
-
-    log.info('Local media import completed!')
-    return 0
-
-
-def import_media(args):
-    log = logging.getLogger(mod_logger + '.import_media')
-    if args.dir:
-        return import_media_from_local(args)
-    elif args.s3bucket:
-        return import_media_from_s3(args)
-    else:
-        log.error('--dir or --s3bucket arg is required')
-        return 1
-
-
 def re_archive(args):
     log = logging.getLogger(mod_logger + '.re_archive')
 
@@ -166,6 +167,69 @@ def re_archive(args):
         return 2
 
     log.info('Completed re-archiving!')
+    return 0
+
+
+def un_import_media(args):
+    log = logging.getLogger(mod_logger + '.un_import_media')
+    if args.dir:
+        return un_import_media_from_local(args)
+    elif args.s3bucket:
+        return un_import_media_from_s3(args)
+    else:
+        log.error('--dir or --s3bucket arg is required')
+        return 1
+
+
+def un_import_media_from_local(args):
+    log = logging.getLogger(mod_logger + '.un_import_media_from_local')
+    if args.dir:
+        source_dir = args.dir
+    else:
+        log.error('--dir arg is required, set to the path of media files to archive')
+        return 1
+
+    root_import_dir = None
+    if args.rootimportdir:
+        root_import_dir = args.rootimportdir
+
+    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, un_import=True)
+    try:
+        imp.process_import()
+    except ImporterError as exc:
+        log.error('Problem processing un-import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
+        traceback.print_exc()
+        return 2
+    log.info('Local media un-import completed!')
+    return 0
+
+
+def un_import_media_from_s3(args):
+    log = logging.getLogger(mod_logger + '.un_import_media_from_s3')
+    if args.s3bucket:
+        s3_bucket = args.s3bucket
+    else:
+        log.error('--s3bucket arg is required, name of the S3 bucket to un-import')
+        return 1
+
+    root_import_dir = None
+    if args.rootimportdir:
+        root_import_dir = args.rootimportdir
+
+    filters = None
+    if args.filters:
+        log.info('Found filters: {f}'.format(f=args.filters))
+        filters = args.filters.split(',')
+
+    s3_imp = S3Importer(s3_bucket=s3_bucket, media_import_root=root_import_dir, un_import=True)
+    log.info('Processing S3 imports...')
+    try:
+        s3_imp.process_s3_imports(filters=filters)
+    except ImporterError as exc:
+        log.error('Problem processing un-imports from S3 bucket: {b}\n{e}'.format(b=s3_bucket, e=str(exc)))
+        traceback.print_exc()
+        return 2
+    log.info('S3 media un-import completed!')
     return 0
 
 
@@ -194,6 +258,8 @@ def main():
         res = import_media(args)
     elif command == 'rearchive':
         res = re_archive(args)
+    elif command == 'unimport':
+        res = un_import_media(args)
     return res
 
 
