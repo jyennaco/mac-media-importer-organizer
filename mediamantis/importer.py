@@ -176,15 +176,7 @@ class Importer(threading.Thread):
         self.s3_bucket = s3_bucket
         self.s3_key = s3_key
         self.un_import = un_import
-        try:
-            self.archive_data = read_archive_text(archive_text_path=os.path.join(import_dir, 'archive.txt'))
-        except ArchiverError:
-            self.archive_data = None
         self.library = library
-        if not self.library:
-            if self.archive_data:
-                if self.archive_data['Library'] != 'default':
-                    self.library = self.archive_data['Library']
         self.dirs = Directories(media_root=media_import_root, library=self.library)
         self.extensions = extensions
         self.downloaded_file = None
@@ -382,6 +374,17 @@ class Importer(threading.Thread):
             msg = 'Problem scanning directory for import: {d}'.format(d=self.import_dir)
             self.slack_failure(msg)
             raise ImporterError(msg) from exc
+
+        # Check archive data for a library
+        if not self.library:
+            try:
+                archive_data = read_archive_text(archive_text_path=os.path.join(self.import_dir, 'archive.txt'))
+            except ArchiverError:
+                archive_data = None
+            if archive_data:
+                if archive_data['Library'] != 'default':
+                    self.library = archive_data['Library']
+                    self.dirs.set_library(library=self.library)
 
         for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
