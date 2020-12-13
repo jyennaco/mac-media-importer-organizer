@@ -20,7 +20,7 @@ from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
 from pycons3rt3.slack import SlackAttachment, SlackMessage
 
-from .archiver import Archiver
+from .archiver import Archiver, read_archive_text
 from .directories import Directories
 from .exceptions import ArchiverError, ImporterError, ZipError
 from .mantistypes import chunker, get_slack_webhook, ImportStatus, MediaFileType
@@ -176,8 +176,16 @@ class Importer(threading.Thread):
         self.s3_bucket = s3_bucket
         self.s3_key = s3_key
         self.un_import = un_import
+        try:
+            self.archive_data = read_archive_text(archive_text_path=os.path.join(import_dir, 'archive.txt'))
+        except ArchiverError:
+            self.archive_data = None
         self.library = library
-        self.dirs = Directories(media_root=media_import_root, library=library)
+        if not self.library:
+            if self.archive_data:
+                if self.archive_data['Library'] != 'default':
+                    self.library = self.archive_data['Library']
+        self.dirs = Directories(media_root=media_import_root, library=self.library)
         self.extensions = extensions
         self.downloaded_file = None
         self.file_import_count = 0

@@ -199,6 +199,8 @@ class Archiver(threading.Thread):
         info_txt += 'Created on: {t}\n'.format(t=datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
         info_txt += 'Created from: {d}\n'.format(d=self.dir_to_archive)
         info_txt += 'Using ID word: {w}\n'.format(w=self.primary_id_word)
+        if self.library:
+            info_txt += 'Library: {b}\n'.format(b=self.library)
         with open(archive_info_file, 'w') as f:
             f.write(info_txt)
         log.info('Created archive info file: {f}'.format(f=archive_info_file))
@@ -669,10 +671,6 @@ class ReArchiverHandler(threading.Thread):
                 shutil.rmtree(self.dir_to_archive)
 
 
-def get_timestamp(elem):
-    return elem.creation_time
-
-
 def get_file_creation_time(file_path):
     """Returns the creation time of the file depending on the platform
 
@@ -687,3 +685,47 @@ def get_file_creation_time(file_path):
             # We're probably on Linux. No easy way to get creation dates here,
             # so we'll settle for when its content was last modified.
             return stat.st_mtime
+
+
+def get_timestamp(elem):
+    return elem.creation_time
+
+
+def read_archive_text(archive_text_path):
+    """Reads archive.txt file
+
+    :param archive_text_path: (str) path to the archive.txt file for an archive
+    :return: (dict) archive meta data
+    :raises: ArchiverError
+    """
+    if not os.path.isfile(archive_text_path):
+        msg = 'archive.txt file not found: {f}'.format(f=archive_text_path)
+        raise ArchiverError(msg)
+    text_file_name = archive_text_path.split(os.sep)[-1]
+    if text_file_name != 'archive.txt':
+        msg = 'File name {f} must be archive.txt'.format(f=text_file_name)
+        raise ArchiverError(msg)
+    archive_data = {}
+    with open(archive_text_path, 'r') as f:
+        content = f.readlines()
+    for line in content:
+        if line.startswith('Created by mediamantis version:'):
+            archive_data['MantisVersion'] = line.split(':')[-1]
+        if line.startswith('Created on:'):
+            archive_data['CreatedOn'] = line.split(':')[-1]
+        if line.startswith('Created from:'):
+            archive_data['CreatedFrom'] = line.split(':')[-1]
+        if line.startswith('Using ID word:'):
+            archive_data['IdWord'] = line.split(':')[-1]
+        if line.startswith('Library:'):
+            archive_data['Library'] = line.split(':')[-1]
+
+    # Ensure all the required data was found
+    if not all(x in ['MantisVersion', 'CreatedOn', 'CreatedFrom', 'IdWord'] for x in archive_data.keys()):
+        msg = 'Data missing from archive.txt file: MantisVersion, CreatedOn, CreatedFrom, or IdWord'
+        raise ArchiverError(msg)
+
+    # Ensure library is set (even if none)
+    if 'Library' not in archive_data.keys():
+        archive_data['Library'] = 'default'
+    return archive_data
