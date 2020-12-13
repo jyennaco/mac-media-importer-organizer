@@ -34,7 +34,7 @@ mod_logger = Logify.get_name() + '.importer'
 
 class S3Importer(object):
 
-    def __init__(self, s3_bucket, media_import_root=None, un_import=False):
+    def __init__(self, s3_bucket, media_import_root=None, un_import=False, library=None):
         self.cls_logger = mod_logger + '.S3Importer'
         self.s3_bucket = s3_bucket
         try:
@@ -44,7 +44,8 @@ class S3Importer(object):
             raise ImporterError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
         self.media_import_root = media_import_root
         self.un_import = un_import
-        self.dirs = Directories(media_root=media_import_root)
+        self.library = library
+        self.dirs = Directories(media_root=media_import_root, library=library)
         self.completed_archives = []
         self.filtered_keys = []
         self.threads = []
@@ -114,7 +115,8 @@ class S3Importer(object):
                 media_import_root=self.media_import_root,
                 s3_bucket=self.s3_bucket,
                 s3_key=filtered_key,
-                un_import=self.un_import
+                un_import=self.un_import,
+                library=self.library
             )
             self.threads.append(imp)
 
@@ -165,7 +167,8 @@ class S3Importer(object):
 
 class Importer(threading.Thread):
 
-    def __init__(self, import_dir=None, media_import_root=None, s3_bucket=None, s3_key=None, un_import=False):
+    def __init__(self, import_dir=None, media_import_root=None, s3_bucket=None, s3_key=None, un_import=False,
+                 library=None):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Importer'
         self.import_dir = import_dir
@@ -173,7 +176,8 @@ class Importer(threading.Thread):
         self.s3_bucket = s3_bucket
         self.s3_key = s3_key
         self.un_import = un_import
-        self.dirs = Directories(media_root=media_import_root)
+        self.library = library
+        self.dirs = Directories(media_root=media_import_root, library=library)
         self.extensions = extensions
         self.downloaded_file = None
         self.file_import_count = 0

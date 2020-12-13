@@ -39,11 +39,12 @@ word_site = 'https://svnweb.freebsd.org/csrg/share/dict/words?view=co&content-ty
 
 class Archiver(threading.Thread):
 
-    def __init__(self, dir_to_archive, media_inbox=None):
+    def __init__(self, dir_to_archive, media_inbox=None, library=None):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Archiver'
         self.dir_to_archive = dir_to_archive
-        self.dirs = Directories(media_inbox=media_inbox)
+        self.library = library
+        self.dirs = Directories(media_inbox=media_inbox, library=library)
         self.archive_files_dir = self.dirs.archive_files_dir
         self.current_archive_size_bytes = 0
         if os.path.isfile(word_file):
@@ -456,11 +457,12 @@ class Archiver(threading.Thread):
 
 class ReArchiver(threading.Thread):
 
-    def __init__(self, s3_bucket, media_inbox=None):
+    def __init__(self, s3_bucket, media_inbox=None, library=None):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.ReArchiver'
         self.s3_bucket = s3_bucket
-        self.dirs = Directories(media_inbox=media_inbox)
+        self.library = library
+        self.dirs = Directories(media_inbox=media_inbox, library=library)
         self.re_archive_s3_keys = []
         self.filtered_keys = []
         self.re_archive_complete_s3_keys = []

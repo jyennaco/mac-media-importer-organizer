@@ -55,7 +55,11 @@ def archive(args):
         media_inbox = args.mediainbox
         log.info('Using media inbox: {d}'.format(d=media_inbox))
 
-    a = Archiver(dir_to_archive=source_dir, media_inbox=media_inbox)
+    library = None
+    if args.library:
+        library = args.library
+
+    a = Archiver(dir_to_archive=source_dir, media_inbox=media_inbox, library=library)
     try:
         a.process_archive()
     except ArchiverError as exc:
@@ -101,7 +105,11 @@ def import_media_from_local(args):
     if args.rootimportdir:
         root_import_dir = args.rootimportdir
 
-    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir)
+    library = None
+    if args.library:
+        library = args.library
+
+    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, library=library)
     try:
         imp.process_import()
     except ImporterError as exc:
@@ -130,7 +138,11 @@ def import_media_from_s3(args):
         log.info('Found filters: {f}'.format(f=args.filters))
         filters = args.filters.split(',')
 
-    s3_imp = S3Importer(s3_bucket=s3_bucket, media_import_root=root_import_dir)
+    library = None
+    if args.library:
+        library = args.library
+
+    s3_imp = S3Importer(s3_bucket=s3_bucket, media_import_root=root_import_dir, library=library)
     log.info('Processing S3 imports...')
     try:
         s3_imp.process_s3_imports(filters=filters)
@@ -158,7 +170,11 @@ def re_archive(args):
         media_inbox = args.mediainbox
         log.info('Using media inbox: {d}'.format(d=media_inbox))
 
-    re = ReArchiver(s3_bucket=s3bucket, media_inbox=media_inbox)
+    library = None
+    if args.library:
+        library = args.library
+
+    re = ReArchiver(s3_bucket=s3bucket, media_inbox=media_inbox, library=library)
     try:
         re.process_re_archive()
     except ArchiverError as exc:
@@ -193,7 +209,11 @@ def un_import_media_from_local(args):
     if args.rootimportdir:
         root_import_dir = args.rootimportdir
 
-    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, un_import=True)
+    library = None
+    if args.library:
+        library = args.library
+
+    imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, un_import=True, library=library)
     try:
         imp.process_import()
     except ImporterError as exc:
@@ -221,7 +241,11 @@ def un_import_media_from_s3(args):
         log.info('Found filters: {f}'.format(f=args.filters))
         filters = args.filters.split(',')
 
-    s3_imp = S3Importer(s3_bucket=s3_bucket, media_import_root=root_import_dir, un_import=True)
+    library = None
+    if args.library:
+        library = args.library
+
+    s3_imp = S3Importer(s3_bucket=s3_bucket, media_import_root=root_import_dir, un_import=True, library=library)
     log.info('Processing S3 imports...')
     try:
         s3_imp.process_s3_imports(filters=filters)
@@ -243,6 +267,7 @@ def main():
     parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
                         required=False)
     parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
+    parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir', required=False)
     args = parser.parse_args()
 
     # Get the command

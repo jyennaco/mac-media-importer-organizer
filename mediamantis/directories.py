@@ -12,11 +12,13 @@ import platform
 
 class Directories(object):
 
-    def __init__(self, media_root=None, media_inbox=None):
+    def __init__(self, media_root=None, media_inbox=None, library=None):
         if media_root:
             self.media_root = media_root
         else:
             self.media_root = os.path.join(os.path.expanduser('~'))
+        if library:
+            self.media_root += os.sep + library
         self.desktop_dir = self.media_root + os.sep + 'Desktop'
 
         if media_inbox:
