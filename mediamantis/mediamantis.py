@@ -55,11 +55,15 @@ def archive(args):
         media_inbox = args.mediainbox
         log.info('Using media inbox: {d}'.format(d=media_inbox))
 
+    keyword = None
+    if args.keyword:
+        keyword = args.keyword
+
     library = None
     if args.library:
         library = args.library
 
-    a = Archiver(dir_to_archive=source_dir, media_inbox=media_inbox, library=library)
+    a = Archiver(dir_to_archive=source_dir, media_inbox=media_inbox, keyword=keyword, library=library)
     try:
         a.process_archive()
     except ArchiverError as exc:
@@ -261,13 +265,14 @@ def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
     parser.add_argument('--dir', help='Archive directory to process', required=False)
+    parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
+    parser.add_argument('--keyword', help='Keyword to include in archive names instead of a random one', required=False)
+    parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir', required=False)
+    parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
+                        required=False)
     parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
-    parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
-                        required=False)
-    parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
-    parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir', required=False)
     args = parser.parse_args()
 
     # Get the command

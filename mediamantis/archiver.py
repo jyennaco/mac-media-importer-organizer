@@ -39,7 +39,7 @@ word_site = 'https://svnweb.freebsd.org/csrg/share/dict/words?view=co&content-ty
 
 class Archiver(threading.Thread):
 
-    def __init__(self, dir_to_archive, media_inbox=None, library=None):
+    def __init__(self, dir_to_archive, media_inbox=None, keyword=None, library=None):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Archiver'
         self.dir_to_archive = dir_to_archive
@@ -52,7 +52,10 @@ class Archiver(threading.Thread):
         else:
             response = requests.get(word_site)
             self.words = response.content.splitlines()
-        self.primary_id_word = random.choice(self.words)
+        if keyword:
+            self.primary_id_word = keyword
+        else:
+            self.primary_id_word = random.choice(self.words)
         self.archive_files_dir_name = self.primary_id_word + '_initial'
         self.archive_files_path = os.path.join(self.archive_files_dir, self.archive_files_dir_name)
         self.archive_total_size = 0

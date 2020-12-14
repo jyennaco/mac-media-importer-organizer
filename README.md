@@ -41,19 +41,27 @@ nohup mantis unimport --s3bucket=bucket-name --filters=asparagyl &
 
 mantis archive --s3bucket bucket-name --dir ~/Pictures/20200325_Pics
 
+# Provide the "--keyword" arg to specify a keyword to be used in the archive 
+# files, instead of a randomly selected keyword
+
+mantis archive --s3bucket bucket-name --dir ~/Pictures/20200325_Pics --keyword joeiphone
+
 # Re-Archive an S3Bucket, this will reorganize an S3 bucket with media files
-into a proper mediamantis archive, where zip files do not exceed 2 GBs
+# into a proper mediamantis archive, where zip files do not exceed 2 GBs
 
 mantis rearchive --s3bucket bucket-name
 
 # Use the "--library NAME" arg to import/archive files under a separate 
-sub-library.  For example, a family member's pics/videos that should be 
-in a separate library:
+# sub-library.  For example, a family member's pics/videos that should be 
+# in a separate library:
 
 mantis import --dir ~/Pictures/20201128_Joys_Pics --library JOY
 mantis import --s3bucket bucket-name \
     --filters YYYYMMDD-YYYYMMDD_keyword.zip \
     --library FRED
+    
+# Note: The --library can be saved in the archive in archive.txt.  If mantis 
+# finds a library in archive.txt at import time, it will be used in the import.
 
 ```
 
