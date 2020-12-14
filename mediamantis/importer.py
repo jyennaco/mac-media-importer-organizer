@@ -379,8 +379,9 @@ class Importer(threading.Thread):
         if not self.library:
             try:
                 archive_data = read_archive_text(archive_text_path=os.path.join(self.import_dir, 'archive.txt'))
-            except ArchiverError:
-                log.warning('Problem reading archive.txt file from directory: {d}'.format(d=self.import_dir))
+            except ArchiverError as exc:
+                log.warning('Problem reading archive.txt file from directory: {d}\n{e}'.format(
+                    d=self.import_dir, e=str(exc)))
                 archive_data = None
             if archive_data:
                 log.info('Found archive data')
