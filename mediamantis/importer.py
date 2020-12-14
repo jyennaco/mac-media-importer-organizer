@@ -380,11 +380,18 @@ class Importer(threading.Thread):
             try:
                 archive_data = read_archive_text(archive_text_path=os.path.join(self.import_dir, 'archive.txt'))
             except ArchiverError:
+                log.warning('Problem reading archive.txt file from directory: {d}'.format(d=self.import_dir))
                 archive_data = None
             if archive_data:
+                log.info('Found archive data')
                 if archive_data['Library'] != 'default':
                     self.library = archive_data['Library']
+                    log.info('Found library in archive dats set to: {b}'.format(b=self.library))
                     self.dirs.set_library(library=self.library)
+                else:
+                    log.info('Using the default library for import')
+        else:
+            log.info('Importing into provided library: {b}'.format(b=self.library))
 
         for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
