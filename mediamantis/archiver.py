@@ -71,7 +71,6 @@ class Archiver(threading.Thread):
         self.media_files = []
         self.archive_dir_list = []
         self.archive_zip_list = []
-        self.s3bucket = None
         slack_webhook = get_slack_webhook(self.dirs)
         if slack_webhook:
             self.slack_msg = SlackMessage(webhook_url=slack_webhook, text='Archiver: {d}'.format(d=dir_to_archive))

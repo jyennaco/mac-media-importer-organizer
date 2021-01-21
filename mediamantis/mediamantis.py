@@ -14,7 +14,9 @@ import logging
 import sys
 import traceback
 
+from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
+from pycons3rt3.s3util import S3Util
 
 from .archiver import Archiver, ReArchiver
 from .exceptions import ArchiverError, ImporterError
@@ -63,24 +65,34 @@ def archive(args):
     if args.library:
         library = args.library
 
+    # Validate the S3 bucket provided
+    s3bucket = None
+    if args.s3bucket:
+        s3bucket = args.s3bucket
+        try:
+            s3 = S3Util(_bucket_name=s3bucket)
+        except Exception as exc:
+            log.error('Problem validating existence of S3 bucket named: {b}'.format(b=s3bucket))
+            traceback.print_exc()
+            return 2
+
     a = Archiver(dir_to_archive=source_dir, media_inbox=media_inbox, keyword=keyword, library=library)
     try:
         a.process_archive()
     except ArchiverError as exc:
         log.error('Problem creating archive for: {s}\n{e}'.format(s=source_dir, e=str(exc)))
         traceback.print_exc()
-        return 2
+        return 3
     log.info('Archive zip files created')
 
-    if args.s3bucket:
-        s3bucket = args.s3bucket
+    if s3bucket:
         log.info('Uploading to S3 bucket: {b}'.format(b=s3bucket))
         try:
             a.upload_to_s3(bucket_name=s3bucket)
         except ArchiverError as exc:
             log.error('Problem uploading to S3 bucket: {b}\n{e}'.format(b=s3bucket, e=str(exc)))
             traceback.print_exc()
-            return 3
+            return 4
         log.info('Completed S3 uploads')
     log.info('Media archiving completed!')
     return 0
