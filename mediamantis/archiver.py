@@ -189,7 +189,8 @@ class Archiver(threading.Thread):
         :param last_timestamp: (str) timestamp format: yyyymmdd-HHMMSS
         :return: (str) directory name for an archive of format: yyyymmdd-yyyymmdd_uniqueWord
         """
-        return first_timestamp.split('-')[0] + '-' + last_timestamp.split('-')[0] + '_' + self.primary_id_word
+        return first_timestamp.split('-')[0] + '-' + last_timestamp.split('-')[0] + '_' + self.primary_id_word + \
+               str(random.randint(10, 99))
 
     def create_archive_info_file(self, archive_path):
         """Creates an archive.txt path
