@@ -56,19 +56,7 @@ class S3Importer(object):
 
         return: None
         """
-        log = logging.getLogger(self.cls_logger + '.read_completed_imports')
-
-        # Ensure the file is found
-        if not os.path.isfile(self.dirs.import_complete_file):
-            log.warning('No archive complete file found: {f}'.format(f=self.dirs.import_complete_file))
-            return
-
-        # Read the file contents
-        log.info('Reading completed imports from file: {f}'.format(f=self.dirs.import_complete_file))
-        with open(self.dirs.import_complete_file, 'r') as f:
-            content = f.readlines()
-        self.completed_archives = [x.strip() for x in content]
-        log.info('Found {n} completed archives'.format(n=str(len(self.completed_archives))))
+        self.completed_archives = read_completed_imports(dirs=self.dirs)
 
     def process_s3_imports(self, filters=None):
         """Determine which S3 keys to import
@@ -136,33 +124,38 @@ class S3Importer(object):
         log.info('Completed processing all thread groups')
 
         # Log successful or failed imports to the respective files
-        successful_imports = ''
         successful_count = 0
+        failed_count = 0
+        successful_imports = ''
         failed_imports = ''
         for imp in self.threads:
             if imp.failed_import:
-                failed_imports += imp.s3_key + '\n'
-                log.warning('Detected failed import/un-import: {k}'.format(k=imp.s3_key))
+                failed_count += 1
+                if imp.s3_key:
+                    # Update the failed import file
+                    log.warning('Detected failed import/un-import: {k}'.format(k=imp.s3_key))
+                    add_failed_import(dirs=self.dirs, failed_import=imp.s3_key)
+                    failed_imports += imp.s3_key + '\n'
             else:
                 successful_count += 1
-                successful_imports += imp.s3_key + '\n'
-        if failed_imports == '':
+                if imp.s3_key:
+                    successful_imports += imp.s3_key + '\n'
+
+        # Print counts and summaries
+        if failed_count == 0:
             log.info('No failed imports/un-imports detected!')
         else:
-            with open(self.dirs.failed_imports_file, 'a') as f:
-                f.write(failed_imports)
-        if successful_imports == '':
+            log.warning('Failed imported archives:\n{t}'.format(t=failed_imports))
+        if successful_count == 0:
             log.warning('No successful imports/un-imports detected!')
         else:
-            with open(self.dirs.import_complete_file, 'a') as f:
-                f.write(successful_imports)
+            log.info('Completed import/un-import of {n} archives:\n{t}'.format(
+                n=str(successful_count), t=successful_imports))
 
         # Clean up downloaded and import files
-        log.info('Cleaning up files...')
+        log.info('Cleaning up files and directories...')
         for imp in self.threads:
             imp.clean()
-        log.info('Completed import/un-import of {n} archives:\n{t}'.format(
-            n=str(successful_count), t=successful_imports))
 
 
 class Importer(threading.Thread):
@@ -348,6 +341,8 @@ class Importer(threading.Thread):
                 msg = 'Downloaded file not found for s3 key: {k}'.format(k=self.s3_key)
                 self.slack_failure(msg)
                 raise ImporterError(msg)
+
+            # Unzip the downloaded zip archive
             log.info('Attempting to unzip: {f}'.format(f=self.downloaded_file))
             try:
                 self.import_dir = unzip_archive(zip_file=self.downloaded_file, output_dir=self.dirs.auto_import_dir)
@@ -357,6 +352,11 @@ class Importer(threading.Thread):
                     z=self.downloaded_file, d=self.dirs.auto_import_dir)
                 self.slack_failure(msg)
                 raise ImporterError(msg) from exc
+
+            # Delete the downloaded zip archive
+            if os.path.isfile(self.downloaded_file):
+                log.info('Removing downloaded archive file: {f}'.format(f=self.downloaded_file))
+                os.remove(self.downloaded_file)
             log.info('Using extracted import directory: {d}'.format(d=self.import_dir))
 
         if not self.import_dir:
@@ -394,6 +394,7 @@ class Importer(threading.Thread):
         else:
             log.info('Importing into provided library: {b}'.format(b=self.library))
 
+        # Import each media file in the archive
         for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
                 continue
@@ -413,6 +414,17 @@ class Importer(threading.Thread):
                 msg = 'Problem importing/un-importing media file: {f}'.format(f=str(media_file))
                 self.slack_failure(msg)
                 raise ImporterError(msg) from exc
+
+        # Append the imported archive to the completed imports file
+        if self.s3_key:
+            add_completed_import(dirs=self.dirs, completed_import=self.s3_key)
+
+        # Delete the import directory after the import completed
+        if os.path.isdir(self.import_dir):
+            log.info('Deleting import directory: {d}'.format(d=self.import_dir))
+            shutil.rmtree(self.import_dir)
+
+        # Print out the summary of the import
         msg = 'Completed processing media files from directory: {d}\n'.format(d=self.import_dir)
         if self.s3_key and not self.un_import:
             msg += 'Imported media files from s3 key: {k}\n'.format(k=self.s3_key)
@@ -456,3 +468,77 @@ class Importer(threading.Thread):
         time.sleep(start_wait_sec)
         log.info('Starting thread to import...')
         self.process_import()
+
+
+def add_completed_import(dirs, completed_import):
+    """Adds an imported archive to the completed imports file
+
+    :param: dirs (Directories) object
+    :param: completed_import: (str) Name of the completed import archive
+    :return: None
+    """
+    log = logging.getLogger(mod_logger + '.add_completed_import')
+    with open(dirs.import_complete_file, 'a') as f:
+        f.write(completed_import + '\n')
+    log.info('Added [{i}] to file: {f}'.format(i=completed_import, f=dirs.import_complete_file))
+
+
+def add_failed_import(dirs, failed_import):
+    """Adds an imported archive to the completed imports file
+
+    :param: dirs: (Directories) object
+    :param: failed_import: (str) Name of the failed import archive
+    :return: None
+    """
+    log = logging.getLogger(mod_logger + '.add_failed_import')
+    with open(dirs.failed_imports_file, 'a') as f:
+        f.write(failed_import + '\n')
+    log.info('Added [{i}] to file: {f}'.format(i=failed_import, f=dirs.failed_imports_file))
+
+
+def read_completed_imports(dirs):
+    """Reads the completed imports file
+
+    :param: (dirs) Directories object
+    return: list of completed imports
+    """
+    log = logging.getLogger(mod_logger + '.read_completed_imports')
+
+    completed_archives = []
+
+    # Ensure the file is found
+    if not os.path.isfile(dirs.import_complete_file):
+        log.warning('No archive complete file found: {f}'.format(f=dirs.import_complete_file))
+        return completed_archives
+
+    # Read the file contents
+    log.info('Reading completed imports from file: {f}'.format(f=dirs.import_complete_file))
+    with open(dirs.import_complete_file, 'r') as f:
+        content = f.readlines()
+    completed_archives = [x.strip() for x in content]
+    log.info('Found {n} completed archives'.format(n=str(len(completed_archives))))
+    return completed_archives
+
+
+def read_failed_imports(dirs):
+    """Reads the failed imports file
+
+    :param: (dirs) Directories object
+    return: list of completed imports
+    """
+    log = logging.getLogger(mod_logger + '.read_failed_imports')
+
+    failed_imports = []
+
+    # Ensure the file is found
+    if not os.path.isfile(dirs.failed_imports_file):
+        log.warning('No failed imports file found: {f}'.format(f=dirs.failed_imports_file))
+        return failed_imports
+
+    # Read the file contents
+    log.info('Reading failed imports from file: {f}'.format(f=dirs.failed_imports_file))
+    with open(dirs.failed_imports_file, 'r') as f:
+        content = f.readlines()
+    failed_imports = [x.strip() for x in content]
+    log.info('Found {n} failed imports'.format(n=str(len(failed_imports))))
+    return failed_imports

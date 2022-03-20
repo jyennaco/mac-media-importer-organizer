@@ -13,7 +13,7 @@ Sample usage:
 
 mantis import --dir=~/Pictures/20200704_iPhone_import
 
-# Import media from removable medis on a Mac
+# Import media from removable media on a Mac
 
 mantis import --dir=/Volumes/KING4GB
 
