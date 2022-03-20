@@ -51,53 +51,72 @@ class S3Importer(object):
         self.threads = []
         self.max_simultaneous_threads = 3
 
-    def read_completed_imports(self):
-        """Reads the completed imports file
+    def filter_completed_s3_keys(self, s3_keys):
+        """Filters out a list of S3 keys by ones that have been completed
 
-        return: None
+        :param s3_keys: (str) list of string S3 keys
+        :return: (list) filtered list of S3 keys that have not been completed yet
         """
-        self.completed_archives = read_completed_imports(dirs=self.dirs)
+        log = logging.getLogger(self.cls_logger + '.filter_completed_s3_keys')
+
+        # Read the completed imports
+        if not self.un_import:
+            self.read_completed_imports()
+
+        # Filter archive files already completed
+        completed_s3_keys = []
+        not_completed_s3_keys = []
+        for s3_key in s3_keys:
+            if self.un_import:
+                log.info('This is an un-import, adding S3 key to the filtered list: {k}'.format(k=s3_key))
+                not_completed_s3_keys.append(s3_key)
+            elif s3_key not in self.completed_archives:
+                log.info('S3 key not already imported: {k}'.format(k=s3_key))
+                not_completed_s3_keys.append(s3_key)
+            else:
+                log.info('S3 key already imported, will not be re-imported: {k}'.format(k=s3_key))
+                completed_s3_keys.append(s3_key)
+        log.info('Found {n} completed S3 keys that will not be imported'.format(n=str(len(completed_s3_keys))))
+        log.info('Found {n} NOT completed S3 keys that will be imported'.format(n=str(len(not_completed_s3_keys))))
+        self.filtered_keys = list(not_completed_s3_keys)
+        return not_completed_s3_keys
+
+    def list_imports(self, filters=None):
+        """Lists the remaining archives to import from the S3 bucket
+
+        :param filters: (list) of string filters
+        :return: (list) filtered list of S3 keys that have not been completed yet
+        """
+        log = logging.getLogger(self.cls_logger + '.list_imports')
+
+        # Get the S3 keys matching the filters
+        matching_keys = self.read_s3_keys(filters=filters)
+
+        # Get the list of filtered S3 keys
+        self.filter_completed_s3_keys(s3_keys=matching_keys)
+
+        # Exit if none are found to import or un-import
+        if len(self.filtered_keys) < 1:
+            log.info('No S3 keys found to import/un-import')
+            return
+
+        # Log the number of filtered keys found
+        log.info('Found {n} filtered, un-imported S3 keys to import/un-import'.format(n=str(len(self.filtered_keys))))
+        return self.filtered_keys
 
     def process_s3_imports(self, filters=None):
         """Determine which S3 keys to import
 
+        :param filters: (list) of string filters
         returns: None
         raises: ImporterError
         """
         log = logging.getLogger(self.cls_logger + '.process_s3_imports')
-        s3_keys = self.s3.find_keys(regex='')
-        if not self.un_import:
-            self.read_completed_imports()
 
-        matching_keys = []
-        if filters:
-            if not isinstance(filters, list):
-                raise ImporterError('filters arg must be a list, found: {t}'.format(t=filters.__class__.__name__))
-            for s3_key in s3_keys:
-                for a_filter in filters:
-                    if a_filter in s3_key:
-                        log.info('Found S3 matching key: {k}'.format(k=s3_key))
-                        matching_keys.append(s3_key)
-        else:
-            log.info('No filters specified, using all S3 keys...')
-            matching_keys = s3_keys
+        # List the imports
+        self.list_imports(filters=filters)
 
-        # Filter archive files already completed
-        log.info('Found {n} matching S3 keys'.format(n=str(len(matching_keys))))
-        for matching_key in matching_keys:
-            if self.un_import:
-                self.filtered_keys.append(matching_key)
-            elif matching_key not in self.completed_archives:
-                log.info('S3 key not already imported: {k}'.format(k=matching_key))
-                self.filtered_keys.append(matching_key)
-            else:
-                log.info('S3 key already imported, will not be re-imported: {k}'.format(k=matching_key))
-
-        if len(self.filtered_keys) < 1:
-            log.info('No S3 keys found to import/un-import')
-            return
-        log.info('Found {n} filtered keys to import/un-import'.format(n=str(len(self.filtered_keys))))
-
+        # Create an importer, and append it to the list of threads
         for filtered_key in self.filtered_keys:
             imp = Importer(
                 media_import_root=self.media_import_root,
@@ -156,6 +175,48 @@ class S3Importer(object):
         log.info('Cleaning up files and directories...')
         for imp in self.threads:
             imp.clean()
+
+    def read_completed_imports(self):
+        """Reads the completed imports file
+
+        return: None
+        """
+        self.completed_archives = read_completed_imports(dirs=self.dirs)
+
+    def read_s3_keys(self, filters=None):
+        """Gets a list of S3 keys from the bucket
+
+        :return:
+        """
+        log = logging.getLogger(self.cls_logger + '.process_s3_imports')
+
+        # Get a list of keys
+        log.info('Getting a list of S3 keys from the target bucket...')
+        try:
+            s3_keys = self.s3.find_keys(regex='')
+        except S3UtilError as exc:
+            msg = 'Problem getting S3 keys from the S3 bucket'
+            raise ImporterError(msg) from exc
+
+        # Save S3 keys matching the provided filters
+        matching_keys = []
+
+        # If filters were provided, find the matching S3 keys
+        if filters:
+            if not isinstance(filters, list):
+                raise ImporterError('filters arg must be a list, found: {t}'.format(t=filters.__class__.__name__))
+            log.info('Filtering on keys that match: [{k}]'.format(k=','.join(filters)))
+            for s3_key in s3_keys:
+                for a_filter in filters:
+                    if a_filter in s3_key:
+                        log.info('Found S3 matching key: {k}'.format(k=s3_key))
+                        matching_keys.append(s3_key)
+        else:
+            log.info('No filters specified, using all S3 keys...')
+            matching_keys = s3_keys
+
+        log.info('Found {n} matching S3 keys'.format(n=str(len(matching_keys))))
+        return matching_keys
 
 
 class Importer(threading.Thread):

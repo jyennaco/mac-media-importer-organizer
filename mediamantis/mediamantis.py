@@ -35,6 +35,7 @@ setup_command_options = [
 # List of valid CLI commands
 valid_commands = setup_command_options + [
     'archive',
+    'backup'
     'import',
     'rearchive',
     'unimport'
@@ -70,9 +71,9 @@ def archive(args):
     if args.s3bucket:
         s3bucket = args.s3bucket
         try:
-            s3 = S3Util(_bucket_name=s3bucket)
-        except Exception as exc:
-            log.error('Problem validating existence of S3 bucket named: {b}'.format(b=s3bucket))
+            _ = S3Util(_bucket_name=s3bucket)
+        except (S3UtilError, Exception) as exc:
+            log.error('Problem validating existence of S3 bucket named: {b}\n{e}'.format(b=s3bucket, e=str(exc)))
             traceback.print_exc()
             return 2
 
@@ -96,6 +97,20 @@ def archive(args):
         log.info('Completed S3 uploads')
     log.info('Media archiving completed!')
     return 0
+
+
+def backup(args):
+    log = logging.getLogger(mod_logger + '.backup')
+    if args.source:
+        source_dir = args.source
+    else:
+        log.error('--source arg is required, set to the root directory of media files to backup')
+        return 1
+    if args.dest:
+        dest_dir = args.dest
+    else:
+        log.error('--dest arg is required, set to the root target directory to backup to')
+        return 1
 
 
 def import_media(args):
@@ -159,13 +174,24 @@ def import_media_from_s3(args):
         library = args.library
 
     s3_imp = S3Importer(s3_bucket=s3_bucket, media_import_root=root_import_dir, library=library)
+
+    if args.list:
+        log.info('Listing remaining archives to import from S3 bucket: {b}'.format(b=s3_bucket))
+        try:
+            s3_imp.list_imports(filters=filters)
+        except ImporterError as exc:
+            log.error('Problem listing imports from S3 bucket: {b}\n{e}'.format(b=s3_bucket, e=str(exc)))
+            traceback.print_exc()
+            return 2
+        return 0
+
     log.info('Processing S3 imports...')
     try:
         s3_imp.process_s3_imports(filters=filters)
     except ImporterError as exc:
         log.error('Problem processing import from S3 bucket: {b}\n{e}'.format(b=s3_bucket, e=str(exc)))
         traceback.print_exc()
-        return 2
+        return 3
 
     log.info('S3 media import completed!')
     return 0
@@ -276,15 +302,18 @@ def un_import_media_from_s3(args):
 def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
+    parser.add_argument('--dest', help='Destination root directory for media to backup', required=False)
     parser.add_argument('--dir', help='Archive directory to process', required=False)
     parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
     parser.add_argument('--keyword', help='Keyword to include in archive names instead of a random one', required=False)
     parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir', required=False)
+    parser.add_argument('--list', help='Output a list pertaining to the command', required=False, action='store_true')
     parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
                         required=False)
     parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
+    parser.add_argument('--source', help='Source root directory for media to backup', required=False)
     args = parser.parse_args()
 
     # Get the command
@@ -296,6 +325,8 @@ def main():
     res = 0
     if command == 'archive':
         res = archive(args)
+    elif command == 'backup':
+        res = backup(args)
     elif command == 'import':
         res = import_media(args)
     elif command == 'rearchive':

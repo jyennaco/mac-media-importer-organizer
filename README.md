@@ -63,6 +63,9 @@ mantis import --s3bucket bucket-name \
 # Note: The --library can be saved in the archive in archive.txt.  If mantis 
 # finds a library in archive.txt at import time, it will be used in the import.
 
+# Back up a set of media files from one place to another (e.g. backing up to an external drive)
+mantis backup --source $HOME --dest /Volumes/KING4GB
+
 ```
 
 mediamantis creates a directory structure under:
