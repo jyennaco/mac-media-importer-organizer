@@ -17,6 +17,10 @@ mantis import --dir=~/Pictures/20200704_iPhone_import
 
 mantis import --dir=/Volumes/KING4GB
 
+# Import media under a specified media root directory (instead of the default $HOME directory)
+
+mantis import --dir=/Volumes/KING4GB --rootimportdir=/Volumes/BACKUP21
+
 # Un-import media that was mistakenly imported from a local direcory:
 
 mantis unimport --dir=~/Pictures/20201212_iPhone_import
@@ -163,7 +167,7 @@ cd mac-media-importer-organizer
 
 ```
 # MacOS:
-~/Library/Python/2.7/bin/virtualenv -p python3 venv
+virtualenv -p python3 venv
 
 # Windows:
 virtualenv -p python3 venv
@@ -178,15 +182,14 @@ source ./venv/bin/activate
 * Verify the python3 version, and pip location are in the venv
 
 ```
-python --version
-which pip
+python3 --version
 ```
 
 * Install dependencies and install mediamantis
 
 ```
-pip install -r cfg/requirements.txt
-python setup.py install
+python3 -m pip install -r cfg/requirements.txt
+python3 setup.py install
 ```
 
 * Test the installation

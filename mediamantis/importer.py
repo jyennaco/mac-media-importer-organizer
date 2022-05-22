@@ -371,8 +371,10 @@ class Importer(threading.Thread):
             self.audio_import_count += 1
         self.file_import_count += 1
 
-    def process_import(self):
+    def process_import(self, delete_import_dir=False):
         """Process the import of media from a directory
+
+        :param: (bool) delete_import_dir: Set True to delete the import directory
 
         return: none
         raises: ImporterError
@@ -482,8 +484,18 @@ class Importer(threading.Thread):
 
         # Delete the import directory after the import completed
         if os.path.isdir(self.import_dir):
-            log.info('Deleting import directory: {d}'.format(d=self.import_dir))
-            shutil.rmtree(self.import_dir)
+            if delete_import_dir:
+                # Check if the import directory is a volume
+                if 'volume' in self.import_dir.lower():
+                    log.info('Detected "volume" in the directory [{d}], not deleting a volume: '.format(
+                        d=self.import_dir))
+                else:
+                    log.info('Deleting import directory: {d}'.format(d=self.import_dir))
+                    shutil.rmtree(self.import_dir)
+            else:
+                log.info('delete_import_dir is False, not cleaning up directory: {d}'.format(d=self.import_dir))
+        else:
+            log.warning('Import directory, is somehow not a directory! {d}'.format(d=self.import_dir))
 
         # Print out the summary of the import
         msg = 'Completed processing media files from directory: {d}\n'.format(d=self.import_dir)

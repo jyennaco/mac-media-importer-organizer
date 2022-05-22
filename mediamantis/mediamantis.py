@@ -140,9 +140,13 @@ def import_media_from_local(args):
     if args.library:
         library = args.library
 
+    cleanup = False
+    if args.cleanup:
+        cleanup = True
+
     imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, library=library)
     try:
-        imp.process_import()
+        imp.process_import(delete_import_dir=cleanup)
     except ImporterError as exc:
         log.error('Problem processing import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
         traceback.print_exc()
@@ -302,6 +306,8 @@ def un_import_media_from_s3(args):
 def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
+    parser.add_argument('--cleanup', help='Delete the import directory when complete', required=False,
+                        action='store_true')
     parser.add_argument('--dest', help='Destination root directory for media to backup', required=False)
     parser.add_argument('--dir', help='Archive directory to process', required=False)
     parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
