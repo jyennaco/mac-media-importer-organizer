@@ -483,19 +483,10 @@ class Importer(threading.Thread):
             add_completed_import(dirs=self.dirs, completed_import=self.s3_key)
 
         # Delete the import directory after the import completed
-        if os.path.isdir(self.import_dir):
-            if delete_import_dir:
-                # Check if the import directory is a volume
-                if 'volume' in self.import_dir.lower():
-                    log.info('Detected "volume" in the directory [{d}], not deleting a volume: '.format(
-                        d=self.import_dir))
-                else:
-                    log.info('Deleting import directory: {d}'.format(d=self.import_dir))
-                    shutil.rmtree(self.import_dir)
-            else:
-                log.info('delete_import_dir is False, not cleaning up directory: {d}'.format(d=self.import_dir))
+        if delete_import_dir:
+            self.clean()
         else:
-            log.warning('Import directory, is somehow not a directory! {d}'.format(d=self.import_dir))
+            log.info('delete_import_dir is False, not cleaning up directory: {d}'.format(d=self.import_dir))
 
         # Print out the summary of the import
         msg = 'Completed processing media files from directory: {d}\n'.format(d=self.import_dir)
@@ -517,18 +508,30 @@ class Importer(threading.Thread):
         self.slack_success(msg)
 
     def clean(self):
-        """Clean files used for import
+        """Clean files and directories used for import
 
         return: True if successful, false otherwise
         """
         log = logging.getLogger(self.cls_logger + '.clean')
         if self.downloaded_file:
-            log.info('Removing file: {f}'.format(f=self.downloaded_file))
-            os.remove(self.downloaded_file)
+            if os.path.isfile(self.downloaded_file):
+                log.info('Removing file: {f}'.format(f=self.downloaded_file))
+                os.remove(self.downloaded_file)
+            else:
+                log.info('Downloaded file not found, nothing to remove: {f}'.format(f=self.downloaded_file))
+        else:
+            log.info('No downloaded file, nothing to remove')
         if self.import_dir:
             if os.path.isdir(self.import_dir):
-                log.info('Removing directory: {d}'.format(d=self.import_dir))
-                shutil.rmtree(self.import_dir)
+                if '/Volume' not in self.import_dir:
+                    log.info('Removing directory: {d}'.format(d=self.import_dir))
+                    shutil.rmtree(self.import_dir)
+                else:
+                    log.info('Not removing a mounted volume: {d}'.format(d=self.import_dir))
+            else:
+                log.info('Import directory not found, nothing to remove: {d}'.format(d=self.import_dir))
+        else:
+            log.info('No import directory, nothing to remove')
 
     def run(self):
         """Start a thread to process an import
