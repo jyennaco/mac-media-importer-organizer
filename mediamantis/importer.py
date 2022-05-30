@@ -524,8 +524,12 @@ class Importer(threading.Thread):
         if self.import_dir:
             if os.path.isdir(self.import_dir):
                 if '/Volume' not in self.import_dir:
-                    log.info('Removing directory: {d}'.format(d=self.import_dir))
-                    shutil.rmtree(self.import_dir)
+                    if self.import_dir.lower() not in self.media_import_root.lower():
+                        log.info('Removing directory: {d}'.format(d=self.import_dir))
+                        shutil.rmtree(self.import_dir)
+                    else:
+                        log.info('Not removing import directory [{d}], it would also delete the media root '
+                                 'directory [{m}]'.format(d=self.import_dir, m=self.media_import_root))
                 else:
                     log.info('Not removing a mounted volume: {d}'.format(d=self.import_dir))
             else:
