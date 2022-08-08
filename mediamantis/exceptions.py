@@ -19,5 +19,9 @@ class MantisError(Exception):
     """General error with Media Mantis"""
 
 
+class MegaError(Exception):
+    """Error from the Mega CMD CLI"""
+
+
 class ZipError(Exception):
     """Excepting during the zipping or unzipping process"""
