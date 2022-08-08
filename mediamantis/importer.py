@@ -371,10 +371,11 @@ class Importer(threading.Thread):
             self.audio_import_count += 1
         self.file_import_count += 1
 
-    def process_import(self, delete_import_dir=False):
+    def process_import(self, delete_import_dir=False, mega=False):
         """Process the import of media from a directory
 
-        :param: (bool) delete_import_dir: Set True to delete the import directory
+        :param delete_import_dir: (bool) delete_import_dir: Set True to delete the import directory
+        :param mega: (bool) Set True to also import to MegaCMD
 
         return: none
         raises: ImporterError

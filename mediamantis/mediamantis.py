@@ -35,7 +35,7 @@ setup_command_options = [
 # List of valid CLI commands
 valid_commands = setup_command_options + [
     'archive',
-    'backup'
+    'backup',
     'import',
     'rearchive',
     'unimport'
@@ -132,6 +132,11 @@ def import_media_from_local(args):
         log.error('--dir arg is required, set to the path of media files to archive')
         return 1
 
+    force = False
+    if args.force:
+        log.info('Importing with force = True')
+        force = True
+
     root_import_dir = None
     if args.rootimportdir:
         root_import_dir = args.rootimportdir
@@ -144,9 +149,13 @@ def import_media_from_local(args):
     if args.cleanup:
         cleanup = True
 
+    mega = False
+    if args.mega:
+        mega = True
+
     imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, library=library)
     try:
-        imp.process_import(delete_import_dir=cleanup)
+        imp.process_import(delete_import_dir=cleanup, mega=mega)
     except ImporterError as exc:
         log.error('Problem processing import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
         traceback.print_exc()
@@ -173,6 +182,11 @@ def import_media_from_s3(args):
         log.info('Found filters: {f}'.format(f=args.filters))
         filters = args.filters.split(',')
 
+    force = False
+    if args.force:
+        log.info('Importing with force = True')
+        force = True
+
     library = None
     if args.library:
         library = args.library
@@ -188,6 +202,16 @@ def import_media_from_s3(args):
             traceback.print_exc()
             return 2
         return 0
+
+    if not force:
+        print('Mediamantis will import {n} files from S3 bucket: {b}'.format(
+            n=str(len(s3_imp.filtered_keys)), b=s3_bucket))
+        for filtered_key in s3_imp.filtered_keys:
+            print('Importing: {f}'.format(f=filtered_key))
+        proceed = input("Proceed with imports? [y/n]: ")
+        if proceed.lower() != 'y':
+            print('Exiting...')
+            return 0
 
     log.info('Processing S3 imports...')
     try:
@@ -311,11 +335,13 @@ def main():
     parser.add_argument('--dest', help='Destination root directory for media to backup', required=False)
     parser.add_argument('--dir', help='Archive directory to process', required=False)
     parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
+    parser.add_argument('--force', help='Force import without querying the user', required=False, action='store_true')
     parser.add_argument('--keyword', help='Keyword to include in archive names instead of a random one', required=False)
     parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir', required=False)
     parser.add_argument('--list', help='Output a list pertaining to the command', required=False, action='store_true')
     parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
                         required=False)
+    parser.add_argument('--mega', help='Import files to Mega cloud', required=False, action='store_true')
     parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
@@ -327,6 +353,7 @@ def main():
 
     if command not in valid_commands:
         print('Invalid command found [{c}]\n'.format(c=command) + valid_commands_str)
+        return 1
 
     res = 0
     if command == 'archive':
