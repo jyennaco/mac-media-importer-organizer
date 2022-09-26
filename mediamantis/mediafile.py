@@ -10,7 +10,7 @@ Data type for media files
 import datetime
 import os
 
-from .mantistypes import ArchiveStatus, ImportStatus
+from .mantistypes import ArchiveStatus, ImportStatus, MediaFileType
 
 
 class MediaFile(object):
@@ -29,3 +29,25 @@ class MediaFile(object):
 
     def __str__(self):
         return self.file_name
+
+    def archive_status_to_str(self):
+        return self.archive_status.name
+
+    def import_status_to_str(self):
+        return self.import_status.name
+
+    def file_type_to_str(self):
+        return self.file_type.name
+
+    def to_record(self):
+        return {
+            'file_path': self.file_path,
+            'file_name': self.file_name,
+            'creation_time': self.creation_timestamp,
+            'size_bytes': self.size_bytes,
+            'file_type': self.file_type_to_str(),
+            'archive_status': self.archive_status_to_str(),
+            'import_status': self.import_status_to_str(),
+            'destination_path': self.destination_path if self.destination_path else 'None',
+            'import_path': self.import_path if self.import_path else 'None'
+        }

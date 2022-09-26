@@ -41,3 +41,18 @@ def get_slack_webhook(dirs):
     with open(dirs.slack_webhook_file, 'r') as f:
         contents = f.read()
     return contents.strip()
+
+
+def map_import_status(import_status_str):
+    if import_status_str == 'COMPLETED':
+        return ImportStatus.COMPLETED
+    elif import_status_str == 'PENDING':
+        return ImportStatus.PENDING
+    elif import_status_str == 'ALREADY_EXISTS':
+        return ImportStatus.ALREADY_EXISTS
+    elif import_status_str == 'DO_NOT_IMPORT':
+        return ImportStatus.DO_NOT_IMPORT
+    elif import_status_str == 'UNIMPORTED':
+        return ImportStatus.UNIMPORTED
+    else:
+        raise ValueError('Unsupported import status: {s}'.format(s=import_status_str))

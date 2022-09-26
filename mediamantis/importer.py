@@ -8,6 +8,7 @@ Imports media files from a variety of sources
 """
 
 import datetime
+import json
 import logging
 import os
 import random
@@ -226,6 +227,7 @@ class Importer(threading.Thread):
         threading.Thread.__init__(self)
         self.cls_logger = mod_logger + '.Importer'
         self.import_dir = import_dir
+        self.import_dir_name = import_dir.split(os.sep)[-1]
         self.media_import_root = media_import_root
         self.s3_bucket = s3_bucket
         self.s3_key = s3_key
@@ -328,6 +330,7 @@ class Importer(threading.Thread):
         year_dir = os.path.join(import_root_path, year)
         month_dir = os.path.join(year_dir, '{y}-{m}'.format(y=year, m=month))
         target_path = os.path.join(month_dir, target_filename)
+        media_file.import_path = target_path
 
         if os.path.isfile(target_path) and not self.un_import:
             log.info('Found media file already imported: {f}'.format(f=target_path))
@@ -360,7 +363,6 @@ class Importer(threading.Thread):
             raise ArchiverError('Problem importing file [{f}] to: {t}'.format(
                 f=media_file.file_path, t=target_path)) from exc
         media_file.import_status = ImportStatus.COMPLETED
-        media_file.import_path = target_path
 
         # Update counts
         if media_file.file_type == MediaFileType.PICTURE:
@@ -382,6 +384,14 @@ class Importer(threading.Thread):
         """
         log = logging.getLogger(self.cls_logger + '.process_import')
 
+        # Date/Time of the import
+        import_timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        # Create the mantis directory for this import if it does not exist
+        if not os.path.isdir(self.dirs.mantis_dir):
+            os.makedirs(self.dirs.mantis_dir, exist_ok=True)
+
+        # Import the S3 archive if both a bucket name and S3 key were provided
         if self.s3_key and self.s3_bucket:
             try:
                 s3 = S3Util(_bucket_name=self.s3_bucket)
@@ -422,7 +432,16 @@ class Importer(threading.Thread):
                 log.info('Removing downloaded archive file: {f}'.format(f=self.downloaded_file))
                 os.remove(self.downloaded_file)
             log.info('Using extracted import directory: {d}'.format(d=self.import_dir))
+        elif self.s3_key and not self.s3_bucket:
+            msg = 'S3 key to a zip archive provided, but s3bucket not provided'
+            self.slack_failure(msg)
+            raise ImporterError(msg)
+        elif self.s3_bucket and not self.s3_key:
+            msg = 'S3 bucket provided, but S3 key to a zip archive was not provided not provided'
+            self.slack_failure(msg)
+            raise ImporterError(msg)
 
+        # Fail out if the import directory is not set
         if not self.import_dir:
             self.failed_import = True
             msg = 'Import directory not set, cannot import!'
@@ -458,6 +477,42 @@ class Importer(threading.Thread):
         else:
             log.info('Importing into provided library: {b}'.format(b=self.library))
 
+        # Path to the mantis import file to track imports
+        mantis_import_file = self.dirs.mantis_dir + os.sep + 'import_' + import_timestamp
+        if self.s3_key:
+            mantis_import_file += '_s3'
+        mantis_import_file += '_' + self.import_dir_name + '.json'
+
+        # Create the mantis import file contents with header
+        mantis_file_content = {
+            'import_timestamp': import_timestamp,
+            'source_directory': self.import_dir,
+            'source_directory_name': self.import_dir_name,
+            's3_bucket': self.s3_bucket if self.s3_bucket else 'None',
+            's3_key': self.s3_key if self.s3_key else 'None',
+            's3_downloaded_file': self.downloaded_file if self.downloaded_file else 'None',
+            'media_inbox': self.dirs.media_inbox,
+            'auto_import_dir': self.dirs.auto_import_dir,
+            'archive_files_dir': self.dirs.archive_files_dir,
+            'library': self.library if self.library else 'None',
+            'media_import_root_directory': self.media_import_root,
+            'unimport': 'True' if self.un_import else 'False',
+            'imports': [],
+            'results': {
+                'total_import_count': self.file_import_count,
+                'picture_import_count': self.picture_import_count,
+                'movie_import_count': self.movie_import_count,
+                'audio_import_count': self.audio_import_count,
+                'already_imported_count': self.already_imported_count,
+                'not_imported_count': self.not_imported_count,
+                'un_imported_count': self.un_imported_count
+            }
+        }
+
+        # Write the import file with the header
+        log.info('Creating import file: {f}'.format(f=mantis_import_file))
+        write_mantis_contents(mantis_file=mantis_import_file, mantis_content=mantis_file_content)
+
         # Import each media file in the archive
         for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
@@ -478,6 +533,23 @@ class Importer(threading.Thread):
                 msg = 'Problem importing/un-importing media file: {f}'.format(f=str(media_file))
                 self.slack_failure(msg)
                 raise ImporterError(msg) from exc
+
+            # Update the mantis import file results
+            mantis_file_content['imports'].append(media_file.to_record())
+
+            # Update the results
+            mantis_file_content['results'] = {
+                'total_import_count': self.file_import_count,
+                'picture_import_count': self.picture_import_count,
+                'movie_import_count': self.movie_import_count,
+                'audio_import_count': self.audio_import_count,
+                'already_imported_count': self.already_imported_count,
+                'not_imported_count': self.not_imported_count,
+                'un_imported_count': self.un_imported_count
+            }
+
+            # Update the mantis file
+            write_mantis_contents(mantis_file=mantis_import_file, mantis_content=mantis_file_content)
 
         # Append the imported archive to the completed imports file
         if self.s3_key:
@@ -623,3 +695,28 @@ def read_failed_imports(dirs):
     failed_imports = [x.strip() for x in content]
     log.info('Found {n} failed imports'.format(n=str(len(failed_imports))))
     return failed_imports
+
+
+def write_mantis_contents(mantis_file, mantis_content):
+    """Write content to the mantis file for an import
+
+    :param mantis_file: (str) Path to mantis file
+    :param mantis_content: (dict) Contents to write
+    :return:
+    """
+    if not isinstance(mantis_file, str):
+        raise ImporterError('mantis_file arg must be a str, found: {t}'.format(t=mantis_file.__class__.__name__))
+    if not isinstance(mantis_content, dict):
+        raise ImporterError('mantis_content arg must be a dict, found: {t}'.format(
+            t=mantis_file.__class__.__name__))
+
+    # Get JSON content
+    mantis_json_content = json.dumps(mantis_content, indent=2, sort_keys=False)
+
+    # Overwrite the mantis file
+    try:
+        with open(mantis_file, 'w') as f:
+            f.write(mantis_json_content)
+    except (IOError, OSError) as exc:
+        msg = 'Problem writing mantis file: {f}'.format(f=mantis_file)
+        raise ImporterError(msg) from exc

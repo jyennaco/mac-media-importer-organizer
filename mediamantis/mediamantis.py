@@ -21,6 +21,7 @@ from pycons3rt3.s3util import S3Util
 from .archiver import Archiver, ReArchiver
 from .exceptions import ArchiverError, ImporterError
 from .importer import Importer, S3Importer
+from .mega import MantisMega
 
 
 mod_logger = Logify.get_name() + '.mediamantis'
@@ -37,6 +38,7 @@ valid_commands = setup_command_options + [
     'archive',
     'backup',
     'import',
+    'mega',
     'rearchive',
     'unimport'
 ]
@@ -225,6 +227,45 @@ def import_media_from_s3(args):
     return 0
 
 
+def process_mega(subcommands, args):
+    """Handles integration with MEGAcmd
+
+    :param subcommands: (
+    :param args:
+    :return:
+    """
+    log = logging.getLogger(mod_logger + '.process_mega')
+
+    # Get args
+    media_import_root = None
+    if args.rootimportdir:
+        media_import_root = args.rootimportdir
+    mega_root = None
+    if args.megaroot:
+        mega_root = args.megaroot
+
+    # Ensure required args
+    if not media_import_root:
+        print('The mega command requires the arg: --rootimportdir <root dir of the mantis imports>')
+        return 1
+    if not mega_root:
+        print('The mega command requires the arg: --megaroot <root dir of the same media on MEGA>')
+        return 1
+
+    # Query user to ensure proper prerequisites are met for this command
+    print('#####################################')
+    print('Please ensure the following and press ENTER when ready:')
+    print('  1. You have a MEGA account')
+    print('  2. The MEGAcmd application is installed and started')
+    print('  3. In the MEGAcmd server, run: [update --auto=OFF] to disable auto-updating while mantis is working')
+    _ = input("Press enter when ready: ")
+
+    mega = MantisMega(media_import_root=media_import_root, mega_root=mega_root)
+    if mega.sync_mantis_imports():
+        return 0
+    return 1
+
+
 def re_archive(args):
     log = logging.getLogger(mod_logger + '.re_archive')
 
@@ -330,6 +371,7 @@ def un_import_media_from_s3(args):
 def main():
     parser = argparse.ArgumentParser(description='mediamantis command line interface (CLI)')
     parser.add_argument('command', help='mantis command')
+    parser.add_argument('subcommands', help='Optional command subtype', nargs='*')
     parser.add_argument('--cleanup', help='Delete the import directory when complete', required=False,
                         action='store_true')
     parser.add_argument('--dest', help='Destination root directory for media to backup', required=False)
@@ -342,6 +384,7 @@ def main():
     parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
                         required=False)
     parser.add_argument('--mega', help='Import files to Mega cloud', required=False, action='store_true')
+    parser.add_argument('--megaroot', help='MEGA root directory to upload media files to', required=False)
     parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
@@ -355,6 +398,12 @@ def main():
         print('Invalid command found [{c}]\n'.format(c=command) + valid_commands_str)
         return 1
 
+    # Get the subcommands
+    if args.subcommands:
+        subcommands = args.subcommands
+    else:
+        subcommands = None
+
     res = 0
     if command == 'archive':
         res = archive(args)
@@ -362,6 +411,8 @@ def main():
         res = backup(args)
     elif command == 'import':
         res = import_media(args)
+    elif command == 'mega':
+        res = process_mega(subcommands=subcommands, args=args)
     elif command == 'rearchive':
         res = re_archive(args)
     elif command == 'unimport':

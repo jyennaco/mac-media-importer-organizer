@@ -16,11 +16,18 @@ class Directories(object):
 
     def __init__(self, media_root=None, media_inbox=None, library=None):
         # Determine the top media root directory
+
+        # Determine media root, default is the home dir, otherwise use the provided media root
         self.media_root = os.path.expanduser('~')
         if media_root:
             self.media_root = media_root
+
+        # If a library was provided, append its path to the media root to become the actual media root
         if library:
             self.media_root += os.sep + library
+
+        # Determine the .mantis directory under media root
+        self.mantis_dir = self.media_root + os.sep + '.mantis'
 
         # Determine the top media inbox directory
         if os.path.isdir(os.path.join(os.path.expanduser('~'), 'Desktop')):
@@ -53,6 +60,7 @@ class Directories(object):
     def get_local_dirs(self):
         return {
             'media_root': self.media_root,
+            'mantis_dir': self.mantis_dir,
             'picture_dir': self.picture_dir,
             'music_dir': self.music_dir,
             'movie_dir': self.movie_dir,
@@ -60,6 +68,9 @@ class Directories(object):
             'auto_import_dir': self.auto_import_dir,
             'archive_files_dir': self.archive_files_dir
         }
+
+    def get_mantis_dir(self):
+        return self.mantis_dir
 
     def set_library(self, library):
         self.media_root += os.sep + library

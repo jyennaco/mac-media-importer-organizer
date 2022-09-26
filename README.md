@@ -67,8 +67,19 @@ mantis import --s3bucket bucket-name \
 # Note: The --library can be saved in the archive in archive.txt.  If mantis 
 # finds a library in archive.txt at import time, it will be used in the import.
 
+# To using the library is a convenience, since you can always just include the 
+# library in with "--rootimportdir rootimportdir/librarydir"
+
 # Back up a set of media files from one place to another (e.g. backing up to an external drive)
 mantis backup --source $HOME --dest /Volumes/KING4GB
+
+# Sync a media directory with MEGA using MEGAcmd
+
+1. Get an account on https://mega.nz
+2. Install and start MegaCMD server
+3. Run mantis command:
+
+mantis mega --rootimportdir /Volumes/BACKUP21 --megaroot /BACKUP21
 
 ```
 
