@@ -243,6 +243,9 @@ def process_mega(subcommands, args):
     mega_root = None
     if args.megaroot:
         mega_root = args.megaroot
+    force = False
+    if args.force:
+        force = True
 
     # Ensure required args
     if not media_import_root:
@@ -252,13 +255,14 @@ def process_mega(subcommands, args):
         print('The mega command requires the arg: --megaroot <root dir of the same media on MEGA>')
         return 1
 
-    # Query user to ensure proper prerequisites are met for this command
-    print('#####################################')
-    print('Please ensure the following and press ENTER when ready:')
-    print('  1. You have a MEGA account')
-    print('  2. The MEGAcmd application is installed and started')
-    print('  3. In the MEGAcmd server, run: [update --auto=OFF] to disable auto-updating while mantis is working')
-    _ = input("Press enter when ready: ")
+    if not force:
+        # Query user to ensure proper prerequisites are met for this command
+        print('#####################################')
+        print('Please ensure the following and press ENTER when ready:')
+        print('  1. You have a MEGA account')
+        print('  2. The MEGAcmd application is installed and started')
+        print('  3. In the MEGAcmd server, run: [update --auto=OFF] to disable auto-updating while mantis is working')
+        _ = input("Press enter when ready: ")
 
     mega = MantisMega(media_import_root=media_import_root, mega_root=mega_root)
     if mega.sync_mantis_imports():

@@ -1,2 +1,3 @@
+progressbar
 pycons3rt3
 requests

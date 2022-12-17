@@ -20,9 +20,11 @@ import datetime
 import json
 import logging
 import os
+import platform
 import threading
 import time
 
+import progressbar
 from pycons3rt3.bash import run_command
 from pycons3rt3.exceptions import CommandError
 from pycons3rt3.logify import Logify
@@ -31,8 +33,20 @@ from pycons3rt3.slack import SlackAttachment, SlackMessage
 from .directories import Directories
 from .exceptions import MegaError
 from .mantisreader import MantisReader
+from .mantistypes import get_slack_webhook
 
 mod_logger = Logify.get_name() + '.mega'
+
+# Progress bar widget for Mega uploads
+widgets = [
+    progressbar.AnimatedMarker(),
+    ' MEGA Uploads ',
+    progressbar.AnimatedMarker(),
+    ' [', progressbar.SimpleProgress(), '] ',
+    ' [', progressbar.Timer(), '] ',
+    progressbar.Bar(),
+    ' (', progressbar.ETA(), ') ',
+]
 
 
 class MantisMega(object):
@@ -51,6 +65,12 @@ class MantisMega(object):
         self.mega_cmd = MegaCmd()
         self.dirs = Directories(media_root=media_import_root)
         self.mega_completion_file = os.path.join(self.dirs.mantis_dir, 'mega_completed_uploads.json')
+        slack_webhook = get_slack_webhook(self.dirs)
+        if slack_webhook:
+            slack_text = 'Mega Uploader: {d}'.format(d=media_import_root)
+            self.slack_msg = SlackMessage(webhook_url=slack_webhook, text=slack_text)
+        else:
+            self.slack_msg = None
 
     def get_completed_uploads(self):
         """Reads a file containing a list of files already uploaded to Mega
@@ -91,6 +111,23 @@ class MantisMega(object):
         log.info('Found {n} completed uploads'.format(n=str(len(completed_uploads))))
         return mega_completion_file_contents['completed_uploads']
 
+    def send_slack_message(self, text, color):
+        """Sends a Slack message using the text as and attachment, and the color
+
+        :param text: (str) Text to send in the attachment
+        :param color: (str) Color for the attachment
+        :return: None
+        :raises: None
+        """
+        log = logging.getLogger(self.cls_logger + '.send_slack_message')
+        if not self.slack_msg:
+            log.debug('Slack is not configured for this mantis')
+            return
+        log.debug('Sending slack message with text [{t}] and color [{c}]'.format(t=text, c=color))
+        attachment = SlackAttachment(fallback=text, text=text, color=color)
+        self.slack_msg.add_attachment(attachment)
+        self.slack_msg.send()
+
     def sync_mantis_imports(self):
         """Sync recent mantis imports by uploading to Mega
 
@@ -109,10 +146,23 @@ class MantisMega(object):
         except MegaError as exc:
             raise MegaError from exc
 
+        # Estimate the amount of uploads
+        log.info('{n} completed uploads'.format(n=str(len(completed_uploads))))
+        log.info('{n} completed imports that need to be uploaded to Mega'.format(n=str(len(completed_imports))))
+        pending_uploads = len(completed_imports) - len(completed_uploads)
+        msg = '{n} estimated pending uploads to Mega are needed'.format(n=str(pending_uploads))
+        log.info(msg)
+        self.send_slack_message(text=msg, color='good')
+
+        # Set a progressbar
+        bar = progressbar.ProgressBar(max_value=pending_uploads, widgets=widgets)
+
         # Compute the mega path for each completed import, and the local/mega paths to a list
         unable_to_upload_imports = []
         upload_count = 0
         for completed_import in completed_imports:
+
+            # Skip if the prefix does not match the media import root
             if not completed_import.startswith(self.media_import_root):
                 log.warning('Completed import path should start with [{p}]: {f}'.format(
                     p=self.media_import_root, f=completed_import))
@@ -148,12 +198,26 @@ class MantisMega(object):
                     raise MegaError(msg) from exc
                 else:
                     upload_count += 1
+                    log.info('Completed [{n}] out of [{m}] uploads'.format(n=str(upload_count), m=str(pending_uploads)))
+                    # Update the progress bar with the index
+                    bar.update(upload_count)
 
             # Add the mega path to the completed uploads list, and update the list
             completed_uploads.append(mega_path)
             self.write_completed_uploads(completed_uploads=completed_uploads)
-        log.info('Completed syncing [{n}] mantis imports from [{d}] to: {p}'.format(
-            n=str(upload_count), d=self.media_import_root, p=self.mega_root))
+
+        # Log and send a Slack message about completed uploads
+        msg = 'Completed uploading [{n}] mantis imports from [{d}] to: {p}'.format(
+            n=str(upload_count), d=self.media_import_root, p=self.mega_root)
+        log.info(msg)
+        self.send_slack_message(text=msg, color='good')
+
+        # Log and send a Slack notification about uncompleted uploads
+        if len(unable_to_upload_imports) > 0:
+            msg = 'Unable to upload [{n}] mantis imports from [{d}] to: {p}'.format(
+                n=str(upload_count), d=self.media_import_root, p=self.mega_root)
+            log.warning(msg)
+            self.send_slack_message(text=msg, color='danger')
 
     def write_completed_uploads(self, completed_uploads):
         """Writes a list of completed uploads
@@ -196,6 +260,15 @@ class MegaCmd(object):
     """
     def __init__(self):
         self.cls_logger = mod_logger + '.MegaCmd'
+
+    def command_runner(self, command):
+        """Runs MegaCMD commands with retry logic
+
+        :param command: (list) Including the mega base command (e.g. mega-put) following by args/options
+        :return: (tuple):
+            (bool) True if the command succeeded, or False if the command failed
+            (int) Exit code from the most recent command attempt
+        """
 
     def ls(self, remote_path):
         """Lists a remote path
@@ -327,4 +400,19 @@ class MegaUploader(threading.Thread):
         self.output = None
 
 
+def kill_mega_server():
+    """Attempts to find and kill the MegaCMD server process
 
+    # MacOS ONLY
+
+    :return: (bool) True if the process was killed, False otherwise
+    """
+    log = logging.getLogger(mod_logger + '.kill_mega_server')
+    current_os = platform.system()
+    if current_os == 'Darwin':
+        # megaCmdPidList=( $(timeout 5s top -stats pid,command | grep -i mega-cmd | awk '{print $1}') )
+        # megaCmdPid="${megaCmdPidList[-1]}"
+        return True
+    else:
+        log.warning('Unsupported OS for killing the MegaCMD process: {p}'.format(p=current_os))
+        return False
