@@ -310,7 +310,7 @@ class Importer(threading.Thread):
             self.not_imported_count += 1
             return
 
-        # Ensure the archive files directory exists, and create it if not found
+        # Ensure the import root directory exists, and create it if not found
         if not os.path.exists(import_root_path):
             log.info('Creating import root path: {d}'.format(d=import_root_path))
             os.makedirs(import_root_path, exist_ok=True)
@@ -513,6 +513,10 @@ class Importer(threading.Thread):
         log.info('Creating import file: {f}'.format(f=mantis_import_file))
         write_mantis_contents(mantis_file=mantis_import_file, mantis_content=mantis_file_content)
 
+        # Add the media import root directory to the import dirs file
+        write_imports_dir_file(imports_dir_file_path=self.dirs.import_dirs_file,
+                               media_import_root=self.media_import_root)
+
         # Import each media file in the archive
         for media_file in arch.media_files:
             if media_file.import_status == ImportStatus.COMPLETED:
@@ -695,6 +699,70 @@ def read_failed_imports(dirs):
     failed_imports = [x.strip() for x in content]
     log.info('Found {n} failed imports'.format(n=str(len(failed_imports))))
     return failed_imports
+
+
+def read_imports_dir_file(imports_dir_file_path, media_import_root):
+    """Reads the contents of the imports dir file
+
+    :param imports_dir_file_path: (str) Full path to the imports dir file
+    :param media_import_root: (str) Full path to the media import root
+    :return: (list) Unique list of file paths for import directories
+    """
+    import_dirs = []
+    if not os.path.isfile(imports_dir_file_path):
+        return import_dirs
+    with open(imports_dir_file_path, 'r') as f:
+        file_content = f.readlines()
+
+    # Get a list of import dirs, one per line of the file
+    raw_import_dirs = [x.strip() for x in file_content]
+
+    # Ensure the list is unique
+    for raw_import_dir in raw_import_dirs:
+        if raw_import_dir not in import_dirs:
+            import_dirs.append(raw_import_dir)
+
+    # Return the list of unique import dirs
+    return import_dirs
+
+
+def write_imports_dir_file(imports_dir_file_path, media_import_root):
+    """Write content to the mantis file for an import
+
+    :param imports_dir_file_path: (str) Full path to the imports dir file
+    :param media_import_root: (str) Full path to the media import root
+    :return: None
+    :raises: ImporterError
+    """
+    if not isinstance(imports_dir_file_path, str):
+        raise ImporterError('imports_dir_file_path arg must be a str, found: {t}'.format(
+            t=str(type(imports_dir_file_path))))
+    if not isinstance(media_import_root, str):
+        raise ImporterError('media_import_root arg must be a str, found: {t}'.format(t=str(type(media_import_root))))
+
+    # Ensure the new media import root exists
+    if not os.path.isdir(media_import_root):
+        raise ImporterError('Media import root directory not found: {d}'.format(d=media_import_root))
+
+    # Get the current list of unqiue import dirs
+    import_dirs = read_imports_dir_file(imports_dir_file_path=imports_dir_file_path,
+                                        media_import_root=media_import_root)
+
+    # Add the new media import root
+    import_dirs.append(media_import_root)
+
+    # Generate the file content as a string
+    file_content = ''
+    for import_dir in import_dirs:
+        file_content += import_dir + '\n'
+
+    # Overwrite the mantis file
+    try:
+        with open(imports_dir_file_path, 'w') as f:
+            f.write(file_content)
+    except (IOError, OSError) as exc:
+        msg = 'Problem writing import dirs file: {f}'.format(f=imports_dir_file_path)
+        raise ImporterError(msg) from exc
 
 
 def write_mantis_contents(mantis_file, mantis_content):

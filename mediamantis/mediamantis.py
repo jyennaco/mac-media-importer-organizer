@@ -19,6 +19,7 @@ from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
 
 from .archiver import Archiver, ReArchiver
+from .directories import Directories
 from .exceptions import ArchiverError, ImporterError
 from .importer import Importer, S3Importer
 from .mega import MantisMega
@@ -38,6 +39,8 @@ valid_commands = setup_command_options + [
     'archive',
     'backup',
     'import',
+    'init',
+    'initialize',
     'mega',
     'rearchive',
     'unimport'
@@ -227,14 +230,38 @@ def import_media_from_s3(args):
     return 0
 
 
+def initialize_mantis(args):
+    """Initializes mantis
+
+    :param args: argparse object
+    :return: (int) 0 for success, non-zero otherwise
+    """
+    log = logging.getLogger(mod_logger + '.initialize_mantis')
+    log.debug('Initializing mantis...')
+
+    media_inbox = None
+    if args.mediainbox:
+        media_inbox = args.mediainbox
+        log.debug('Using user-provided media inbox: {d}'.format(d=media_inbox))
+    else:
+        log.debug('Using the default media inbox')
+
+    # Initialize directories and scripts
+    dirs = Directories(media_inbox=media_inbox)
+    dirs.create_mantis_dirs()
+    dirs.create_mantis_scripts()
+    return 0
+
+
 def process_mega(subcommands, args):
     """Handles integration with MEGAcmd
 
-    :param subcommands: (
-    :param args:
-    :return:
+    :param subcommands: (list) of subcommands
+    :param args: argparse object
+    :return: (int) 0 for success, non-zero otherwise
     """
     log = logging.getLogger(mod_logger + '.process_mega')
+    log.debug('Processing MEGA uploads...')
 
     # Get args
     media_import_root = None
@@ -408,6 +435,9 @@ def main():
     else:
         subcommands = None
 
+    # Initialize mantis
+    initialize_mantis(args=args)
+
     res = 0
     if command == 'archive':
         res = archive(args)
@@ -415,6 +445,8 @@ def main():
         res = backup(args)
     elif command == 'import':
         res = import_media(args)
+    elif command in ['init', 'initialize']:
+        res = initialize_mantis(args=args)
     elif command == 'mega':
         res = process_mega(subcommands=subcommands, args=args)
     elif command == 'rearchive':

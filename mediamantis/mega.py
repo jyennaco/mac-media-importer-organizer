@@ -187,8 +187,7 @@ class MantisMega(object):
                 log.info('File already exists on Mega: {f}'.format(f=mega_path))
                 completed_uploads.append(mega_path)
             else:
-                # Get the directory portion of the path
-                #mega_dir = os.path.dirname(mega_path)
+                # Sleep to allow MegaCMD some breathing room
                 time.sleep(2)
                 try:
                     self.mega_cmd.put(local_path_list=[completed_import], remote_destination_path=mega_path)
