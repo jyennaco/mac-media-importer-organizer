@@ -18,6 +18,7 @@ import time
 
 from PIL import Image
 from PIL.ExifTags import TAGS
+from pillow_heif import register_heif_opener
 from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
@@ -727,6 +728,12 @@ def get_image_creation_time_from_exif_data(file_path):
     :param file_path: (str) Path to file
     :return: float or None
     """
+    # Register the HEIF opener if this image is .HEIC
+    if file_path.lower().endswith('heic'):
+        register_heif_opener()
+    elif file_path.lower().endswith('aae'):
+        return
+
     # read the image data using PIL
     image = Image.open(file_path)
 
