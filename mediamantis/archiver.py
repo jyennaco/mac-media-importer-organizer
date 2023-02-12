@@ -16,6 +16,8 @@ import shutil
 import threading
 import time
 
+from PIL import Image
+from PIL.ExifTags import TAGS
 from pycons3rt3.exceptions import S3UtilError
 from pycons3rt3.logify import Logify
 from pycons3rt3.s3util import S3Util
@@ -150,7 +152,7 @@ class Archiver(threading.Thread):
                     self.unknown_count += 1
 
                 # Get the creation time
-                creation_time = get_file_creation_time(file_path)
+                creation_time = get_file_creation_time(file_path, file_type)
 
                 # Add a media file to the list
                 self.media_files.append(MediaFile(
@@ -674,20 +676,83 @@ class ReArchiverHandler(threading.Thread):
                 shutil.rmtree(self.dir_to_archive)
 
 
-def get_file_creation_time(file_path):
+def get_file_creation_time(file_path, file_type):
     """Returns the creation time of the file depending on the platform
 
+    :param file_path: (str) Path to file
+    :param file_type: (MediaFileType) Enum for the type of media file
+    :return: float
     """
+
+    # Determine if this is an image file
+    if file_type:
+        if isinstance(file_type, MediaFileType):
+            if file_type == MediaFileType.PICTURE:
+                # For image files, attempt to get the file creation time from EXIF data
+                image_date_time = get_image_creation_time_from_exif_data(file_path)
+                if image_date_time:
+                    return image_date_time
+
+    # If this was not an import, return based on the platform
     if platform.system() == 'Windows':
         return os.path.getctime(file_path)
-    else:
-        stat = os.stat(file_path)
-        try:
-            return stat.st_birthtime
-        except AttributeError:
-            # We're probably on Linux. No easy way to get creation dates here,
-            # so we'll settle for when its content was last modified.
-            return stat.st_mtime
+
+    # Otherwise we are on macOS or Linux, get os.stat data
+    stat = os.stat(file_path)
+
+    # Get the modified time
+    modified_timestamp = stat.st_mtime
+
+    # Try to get the creation time
+    try:
+        creation_time = stat.st_birthtime
+    except AttributeError:
+        # We're probably on Linux. No easy way to get creation dates here,
+        # so we'll settle for when its content was last modified.
+        return modified_timestamp
+
+    # If we have both creation and modified time, return the earlier of the two
+    if creation_time < modified_timestamp:
+        return creation_time
+    return modified_timestamp
+
+
+def get_image_creation_time_from_exif_data(file_path):
+    """Attempt to find image creation time using EXIF data
+
+    If none found, return None
+
+    Otherwise, return unix timestamp
+
+    :param file_path: (str) Path to file
+    :return: float or None
+    """
+    # read the image data using PIL
+    image = Image.open(file_path)
+
+    # extract EXIF data
+    exifdata = image.getexif()
+
+    # iterating over all EXIF data fields
+    image_date_time = None
+    for tag_id in exifdata:
+        # get the tag name, instead of human unreadable tag id
+        tag = TAGS.get(tag_id, tag_id)
+        if tag == 'DateTime':
+            image_date_time = exifdata.get(tag_id)
+            break
+
+    # Expected format is: 2022:08:13 11:23:43
+    if not image_date_time:
+        return
+    try:
+        dt = datetime.datetime.strptime(image_date_time, '%Y:%m:%d %H:%M:%S')
+    except ValueError:
+        return
+    ut = dt.timestamp()
+
+    # Return the float unix time
+    return ut
 
 
 def get_timestamp(elem):
