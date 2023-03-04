@@ -150,15 +150,18 @@ class MantisMega(object):
         log.info('{n} completed uploads'.format(n=str(len(completed_uploads))))
         log.info('{n} completed imports that need to be uploaded to Mega'.format(n=str(len(completed_imports))))
         pending_uploads = len(completed_imports) - len(completed_uploads)
-        msg = '{n} estimated pending uploads to Mega are needed'.format(n=str(pending_uploads))
 
-        # Ensure the computed number of pending uploads is not < 0, or exit if 0
+        # Ensure the computed number of pending uploads is not < 0
         if pending_uploads < 0:
             log.warning('Found a negative number of pending uploads, something is not right: {p}'.format(
                 p=str(pending_uploads)))
             pending_uploads = len(completed_imports)
             log.info('Using the number of completed uploads as the number remaining...')
-        elif pending_uploads == 0:
+
+        msg = '{n} estimated pending uploads to Mega are needed'.format(n=str(pending_uploads))
+
+        # Or exit if 0
+        if pending_uploads == 0:
             log.info(msg)
             return
 
