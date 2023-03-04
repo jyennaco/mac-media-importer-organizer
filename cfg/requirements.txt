@@ -1,5 +1,6 @@
 pillow
 pillow-heif
-progressbar
-pycons3rt3
-requests
+progressbar~=2.5
+pycons3rt3~=0.0.12
+requests~=2.28.2
+setuptools~=65.6.3

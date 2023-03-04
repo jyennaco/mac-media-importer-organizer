@@ -79,7 +79,19 @@ do
 
   echo "mantis exited with code: ${res}, killing the server in 5 seconds..."
   sleep 5
-  megaFinder=( $(timeout 5s top -stats pid,command | grep -i mega-cmd | awk '{print $1}') )
+  if [ -z "${OSTYPE}" ]; then
+      echo "Unable to determine OS type, exiting..."
+      exit 1
+  else
+      if [[ "${OSTYPE}" == "darwin"* ]]; then
+          megaFinder=( $(timeout 5s top -stats pid,command | grep -i 'mega-cmd' | awk '{print $1}') )
+      elif [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+          megaFinder=( $(ps -ef | grep -i 'mega-cmd-server' | grep -v 'grep' | awk '{print $2}') )
+      else
+          echo "mega uploading in this script if not support for OS: ${OSTYPE}"
+      fi
+  fi
+
   echo "Found PIDs: ${megaFinder[@]}"
   serverPid="${megaFinder[0]}"
   if [ -z "${serverPid}" ]; then

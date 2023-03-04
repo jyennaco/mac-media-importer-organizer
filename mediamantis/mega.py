@@ -151,6 +151,18 @@ class MantisMega(object):
         log.info('{n} completed imports that need to be uploaded to Mega'.format(n=str(len(completed_imports))))
         pending_uploads = len(completed_imports) - len(completed_uploads)
         msg = '{n} estimated pending uploads to Mega are needed'.format(n=str(pending_uploads))
+
+        # Ensure the computed number of pending uploads is not < 0, or exit if 0
+        if pending_uploads < 0:
+            log.warning('Found a negative number of pending uploads, something is not right: {p}'.format(
+                p=str(pending_uploads)))
+            pending_uploads = len(completed_imports)
+            log.info('Using the number of completed uploads as the number remaining...')
+        elif pending_uploads == 0:
+            log.info(msg)
+            return
+
+        # Notify
         log.info(msg)
         self.send_slack_message(text=msg, color='good')
 
@@ -251,6 +263,7 @@ class MantisMega(object):
         except (IOError, OSError) as exc:
             msg = 'Problem writing mega completion file: {f}'.format(f=self.mega_completion_file)
             raise MegaError(msg) from exc
+        log.debug('Write mega completion file: {f}'.format(f=self.mega_completion_file))
 
 
 class MegaCmd(object):
@@ -379,7 +392,7 @@ class MegaCmd(object):
 class MegaUploader(threading.Thread):
     """TBD
 
-    Uploads files to MEGA cloud mutli-threaded
+    Upload files to MEGA cloud multithreaded
     """
 
     def __init__(self, slack_webhook_url=None, slack_channel=None, slack_text=None):
@@ -402,7 +415,7 @@ class MegaUploader(threading.Thread):
 def kill_mega_server():
     """Attempts to find and kill the MegaCMD server process
 
-    # MacOS ONLY
+    # macOS ONLY
 
     :return: (bool) True if the process was killed, False otherwise
     """

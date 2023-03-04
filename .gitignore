@@ -8,3 +8,5 @@ mediamantis.egg-info
 dist
 build
 mediamantis/__pycache__
+*.iml
+.idea/
