@@ -104,9 +104,10 @@ Media_Inbox/
     auto_import/
         # Downloaded archives or files from S3, staged for import
         # This directory should be automatically cleaned up
-    My_Directory_Of_Media/
-        # This is a good location to stage media before import/archiving
-        # For example, media imported from an iPhone
+    import/
+        My_Directory_Of_Media/
+            # This is a good location to stage media before import/archiving
+            # For example, media imported from an iPhone
     slack.txt -- (optional) Contains a Slack webhook
 ```
 
@@ -127,19 +128,19 @@ git clone https://github.com/jyennaco/mac-media-importer-organizer.git
 * [Install git](https://git-scm.com/downloads)
 
 * Edit the `PATH` environment variable to includw:
-    * `C:\Python39\`
-    * `C:\Python39\Scripts`
+    * `C:\Python3xx\`
+    * `C:\Python3xx\Scripts`
 
 * Install pip
 
 ```
-python3 -m install --upgrade pip
+python3 -m pip install --upgrade pip
 ```
 
 * Install virtual environments
 
 ```
-pip install virtualenv
+python3 -m pip install virtualenv
 ```
 
 ...continue below...  
