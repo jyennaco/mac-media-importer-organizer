@@ -80,7 +80,15 @@ class MantisReader(object):
             self.read_mantis_imports()
 
         log.info('Scanning mantis data for completed imports...')
+
+        # Store the completed imports that have paths that exist locally
         completed_import_paths = []
+
+        # Import paths not found locally, likely imported on another machine
+        not_found_imports = []
+
+        # Count of total imports found
+        import_count = 0
 
         for mantis_data in self.mantis_file_content_list:
             if 'imports' not in mantis_data.keys():
@@ -98,16 +106,26 @@ class MantisReader(object):
                     continue
                 import_status = map_import_status(import_status_str=mantis_import['import_status'])
                 import_path = mantis_import['import_path']
+                import_count += 1
                 if import_status == ImportStatus.COMPLETED:
                     if os.path.isfile(import_path):
                         log.debug('Found import marked as completed: {f}'.format(f=import_path))
                         completed_import_paths.append(import_path)
                     else:
-                        log.warning('Import marked completed but file not found: {f}'.format(f=import_path))
+                        log.debug('Import marked completed but file not found, not adding to the list of potential '
+                                  'imports: {f}'.format(f=import_path))
+                        not_found_imports.append(import_path)
 
         # Eliminate duplicates
         completed_import_paths = list(set(completed_import_paths))
         self.completed_import_paths = completed_import_paths
+
+        # Log results
+        log.info('Found {n} total imports in {f} import files'.format(
+            n=str(import_count), f=str(len(self.mantis_file_content_list))))
+        log.info('Found {n} imports that were not found locally, likely imported from another machine'.format(
+            n=str(len(not_found_imports))))
+        log.info('Found {n} completed imports that exist locally'.format(n=str(len(completed_import_paths))))
         return completed_import_paths
 
     def read_mantis_import_file(self, import_file_path):
@@ -125,7 +143,7 @@ class MantisReader(object):
             raise MantisError(msg)
 
         # Load the JSON content
-        log.info('Reading mantis import file: {f}'.format(f=import_file_path))
+        log.debug('Reading mantis import file: {f}'.format(f=import_file_path))
         try:
             with open(import_file_path, 'r') as f:
                 json_content = f.read()

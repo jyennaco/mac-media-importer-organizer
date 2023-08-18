@@ -111,13 +111,91 @@ class MantisMega(object):
         log.info('Found {n} completed uploads'.format(n=str(len(completed_uploads))))
         return mega_completion_file_contents['completed_uploads']
 
+    def get_pending_uploads(self, completed_uploads, completed_imports):
+        """Given a list of completed uploads and a list of completed imports, return a list the figures out
+        which of the completed imports need tobe uploaded
+
+        Completed imports which have a path not found, are skipped.  These are assumed to have been imported
+        from another machine and likely synced to Mega from there.
+
+        TODO evaluate if there is a clean way to determine pending uploads from another machine, e.g. the
+            ones in import_path_not_found
+
+        :param completed_uploads: (list) of mega paths to uploads that have been completed
+        :param completed_imports: (list) of completed import paths
+        :return: (tuple)
+            (list) of (dict) { "import_path": import_path, "mega_path", mega_path }
+            (list) of imports found to be already uploaded
+            (list) of imports where the local file path was not found
+        :raises: MegaError
+        """
+        log = logging.getLogger(self.cls_logger + '.get_pending_uploads')
+
+        # List of imports (dict) that need to be uploaded, this gets returned
+        # Format: { "import_path": import_path, "mega_path", mega_path }
+        pending_uploads = []
+
+        # List of import paths that were not found, potentially imported on another machine where the import
+        # path was different e.g. /media/BACKUPS on Linux vs. /Volumes/BACKUPS on macOS
+        import_paths_not_found = []
+
+        # List of import paths that were found to be already uploaded via the provided completed uploads
+        already_uploaded = []
+
+        # Loop through the completed imports to determine which need to be uploaded
+        for completed_import in completed_imports:
+
+            # Skip if the prefix does not match the media import root
+            if not completed_import.startswith(self.media_import_root):
+                log.info('This import was likely imported from another machine, expected prefix [{p}], '
+                         'found [{f}]'.format(p=self.media_import_root, f=completed_import))
+                import_paths_not_found.append(completed_import)
+                continue
+
+            # Determine the relative path to the import root, this is used as the relative path to the mega root
+            # for the upload to Mega
+            relative_path = completed_import[len(self.media_import_root)+1:]
+            mega_path = os.path.join(self.mega_root, relative_path)
+
+            # Check completed uploads and skip ones already uploaded
+            if mega_path in completed_uploads:
+                log.debug('Mega upload already found in completed uploads: {p}'.format(p=mega_path))
+                already_uploaded.append(completed_import)
+                continue
+
+            # Add this import to the intermediate list of uploads, before checking the Mega paths for existence
+            pending_uploads.append({
+                'import_path': completed_import,
+                'mega_path': mega_path
+            })
+
+        # Estimate the amount of uploads
+        log.info('{n} completed uploads'.format(n=str(len(completed_uploads))))
+        log.info('{n} completed imports that most likely need to be uploaded to Mega'.format(
+            n=str(len(pending_uploads))))
+
+        # Log the results
+        log.info('Out of the {n} completed imports found...'.format(n=str(len(completed_imports))))
+        log.info('Number of local file paths not found, likely imported on another machine: {n}'.format(
+            n=str(len(import_paths_not_found))))
+        log.info('Number of files already uploaded to Mega: {n}'.format(n=str(len(already_uploaded))))
+        log.info('Number of files pending upload to Mega: {n}'.format(n=str(len(pending_uploads))))
+
+        # Ensure the computed number of pending uploads is not < 0
+        pending_vs_completed = len(completed_imports) - len(pending_uploads)
+        if pending_vs_completed < 0:
+            msg = 'There are more pending uploads than completed imports, something is not right: {p}'.format(
+                p=str(pending_vs_completed))
+            raise MegaError(msg)
+
+        return pending_uploads, already_uploaded, import_paths_not_found
+
     def send_slack_message(self, text, color):
         """Sends a Slack message using the text as and attachment, and the color
 
         :param text: (str) Text to send in the attachment
         :param color: (str) Color for the attachment
         :return: None
-        :raises: None
         """
         log = logging.getLogger(self.cls_logger + '.send_slack_message')
         if not self.slack_msg:
@@ -146,22 +224,14 @@ class MantisMega(object):
         except MegaError as exc:
             raise MegaError from exc
 
-        # Estimate the amount of uploads
-        log.info('{n} completed uploads'.format(n=str(len(completed_uploads))))
-        log.info('{n} completed imports that need to be uploaded to Mega'.format(n=str(len(completed_imports))))
-        pending_uploads = len(completed_imports) - len(completed_uploads)
+        # Create a diff and find the completed imports that have a valid path on this machine
+        pending_uploads, already_uploaded, import_paths_not_found = self.get_pending_uploads(
+            completed_uploads=completed_uploads, completed_imports=completed_imports)
 
-        # Ensure the computed number of pending uploads is not < 0
-        if pending_uploads < 0:
-            log.warning('Found a negative number of pending uploads, something is not right: {p}'.format(
-                p=str(pending_uploads)))
-            pending_uploads = len(completed_imports)
-            log.info('Using the number of completed uploads as the number remaining...')
-
-        msg = '{n} estimated pending uploads to Mega are needed'.format(n=str(pending_uploads))
+        msg = '{n} estimated pending uploads to Mega are needed'.format(n=str(len(pending_uploads)))
 
         # Or exit if 0
-        if pending_uploads == 0:
+        if len(pending_uploads) == 0:
             log.info(msg)
             return
 
@@ -170,29 +240,27 @@ class MantisMega(object):
         self.send_slack_message(text=msg, color='good')
 
         # Set a progressbar
-        bar = progressbar.ProgressBar(max_value=pending_uploads, widgets=widgets)
+        bar = progressbar.ProgressBar(max_value=len(pending_uploads), widgets=widgets)
 
         # Compute the mega path for each completed import, and the local/mega paths to a list
         unable_to_upload_imports = []
+
+        # List of Mega paths that were found to be already uploaded via a matching enumerated mega path
+        found_mega_paths = []
+
+        # Count of uploads completed
         upload_count = 0
-        for completed_import in completed_imports:
 
-            # Skip if the prefix does not match the media import root
-            if not completed_import.startswith(self.media_import_root):
-                log.warning('Completed import path should start with [{p}]: {f}'.format(
-                    p=self.media_import_root, f=completed_import))
-                unable_to_upload_imports.append(completed_import)
-                continue
-            relative_path = completed_import[len(self.media_import_root)+1:]
-            mega_path = os.path.join(self.mega_root, relative_path)
+        for pending_upload in pending_uploads:
 
-            # Check completed uploads and skip ones already uploaded
-            if mega_path in completed_uploads:
-                log.debug('Path already found in completed uploads: {p}'.format(p=mega_path))
-                continue
+            log.debug('Waiting 1 second...')
+            time.sleep(1)
 
-            # Check if the mega path already exists
-            time.sleep(2)
+            # Get the completed import path and the mega path
+            completed_import = pending_upload['import_path']
+            mega_path = pending_upload['mega_path']
+
+            # Check if the remote path exists
             try:
                 remote_path_exists = self.mega_cmd.remote_path_exists(remote_path=mega_path)
             except MegaError as exc:
@@ -200,25 +268,36 @@ class MantisMega(object):
                 raise MegaError(msg) from exc
             if remote_path_exists:
                 log.info('File already exists on Mega: {f}'.format(f=mega_path))
-                completed_uploads.append(mega_path)
+                found_mega_paths.append(mega_path)
             else:
-                # Sleep to allow MegaCMD some breathing room
-                time.sleep(2)
+                # This file does not exist in Mega and is a pending upload
+                log.debug('Found pending upload that does not exist in Mega: {f}'.format(f=completed_import))
+
+                # Attempt the Mega upload
+                log.debug('Uploading file [{f}] to mega path: {m}'.format(f=completed_import, m=mega_path))
                 try:
                     self.mega_cmd.put(local_path_list=[completed_import], remote_destination_path=mega_path)
                 except MegaError as exc:
                     msg = 'Problem uploading local file [{f}] to remote path: {p}'.format(
                         f=completed_import, p=mega_path)
                     raise MegaError(msg) from exc
-                else:
-                    upload_count += 1
-                    log.info('Completed [{n}] out of [{m}] uploads'.format(n=str(upload_count), m=str(pending_uploads)))
-                    # Update the progress bar with the index
-                    bar.update(upload_count)
+
+            # Consider the upload successful
+            upload_count += 1
+            log.info('Completed [{n}] out of [{m}] uploads'.format(n=str(upload_count), m=str(len(pending_uploads))))
+            # Update the progress bar with the index
+            bar.update(upload_count)
 
             # Add the mega path to the completed uploads list, and update the list
             completed_uploads.append(mega_path)
             self.write_completed_uploads(completed_uploads=completed_uploads)
+
+        # Log how many files already existed on Mega
+        log.info('Found {n} completed imports already existed on Mega'.format(n=str(len(found_mega_paths))))
+
+        # Eliminate duplicates from completed uploads and update the list
+        completed_uploads = list(set(completed_uploads))
+        self.write_completed_uploads(completed_uploads=completed_uploads)
 
         # Log and send a Slack message about completed uploads
         msg = 'Completed uploading [{n}] mantis imports from [{d}] to: {p}'.format(
