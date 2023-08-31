@@ -137,6 +137,11 @@ class Archiver(threading.Thread):
                 # Get the file size
                 file_size = os.path.getsize(file_path)
 
+                # Skip if file suze is zero bytes
+                if file_size == 0:
+                    log.info('Skipping file with size of zero bytes: {f}'.format(f=file_path))
+                    continue
+
                 # Get the file type
                 ext = file_path.split('.')[-1].lower()
                 if ext in extensions['pics']:
