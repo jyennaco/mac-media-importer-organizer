@@ -64,17 +64,22 @@ fi
 
 echo "Starting mantis mega uploader..."
 
+# Timeout for mantis upload processes
+mantisTimeoutSec=3600
+
 # This loops under the mantis mega command exits successfully
 count=0
 while :
 do
 
   echo "Running mantis..."
-  mantis mega --rootimportdir ${mediaImportRoot} --megaroot ${megaRoot} --force
+  timeout ${mantisTimeoutSec}s mantis mega --rootimportdir ${mediaImportRoot} --megaroot ${megaRoot} --force
   res=$?
   if [ ${res} -eq 0 ]; then
-    echo "mantis exited with code 0"
-    break
+      echo "mantis exited with code 0"
+      break
+  elif [ ${res} -eq 124 ]; then
+      echo "mantis "
   fi
 
   echo "mantis exited with code: ${res}, killing the server in 5 seconds..."
