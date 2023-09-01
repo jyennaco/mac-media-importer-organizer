@@ -292,9 +292,10 @@ def process_mega(subcommands, args):
         _ = input("Press enter when ready: ")
 
     mega = MantisMega(media_import_root=media_import_root, mega_root=mega_root)
-    if mega.sync_mantis_imports():
-        return 0
-    return 1
+    failed_uploads = mega.sync_mantis_imports()
+    if len(failed_uploads) > 0:
+        return 1
+    return 0
 
 
 def re_archive(args):

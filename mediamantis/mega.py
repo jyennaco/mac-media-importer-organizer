@@ -209,10 +209,13 @@ class MantisMega(object):
     def sync_mantis_imports(self):
         """Sync recent mantis imports by uploading to Mega
 
-        :return: None
+        :return: (list) of str failed pending upload paths
         :raises: MegaError
         """
         log = logging.getLogger(self.cls_logger + '.sync_mantis_imports')
+
+        # List of failed uploads to be returned
+        failed_uploads = []
 
         # First read mantis imports from the media import root directory
         mantis_reader = MantisReader(media_import_root=self.media_import_root)
@@ -233,7 +236,7 @@ class MantisMega(object):
         # Or exit if 0
         if len(pending_uploads) == 0:
             log.info(msg)
-            return
+            return failed_uploads
 
         # Notify
         log.info(msg)
@@ -241,9 +244,6 @@ class MantisMega(object):
 
         # Set a progressbar
         bar = progressbar.ProgressBar(max_value=len(pending_uploads), widgets=widgets)
-
-        # Compute the mega path for each completed import, and the local/mega paths to a list
-        unable_to_upload_imports = []
 
         # List of Mega paths that were found to be already uploaded via a matching enumerated mega path
         found_mega_paths = []
@@ -260,12 +260,19 @@ class MantisMega(object):
             completed_import = pending_upload['import_path']
             mega_path = pending_upload['mega_path']
 
+            # Bump the upload count
+            upload_count += 1
+
             # Check if the remote path exists
             try:
                 remote_path_exists = self.mega_cmd.remote_path_exists(remote_path=mega_path)
             except MegaError as exc:
-                msg = 'Problem determining existence of remote path: {p}'.format(p=mega_path)
-                raise MegaError(msg) from exc
+                log.warning('Problem determining existence of remote path: {p}\n{e}'.format(
+                    p=mega_path, e=str(exc)))
+                failed_uploads.append(pending_upload)
+                continue
+
+            # Check if the remote path exists on mega, add to found_paths
             if remote_path_exists:
                 log.info('File already exists on Mega: {f}'.format(f=mega_path))
                 found_mega_paths.append(mega_path)
@@ -278,13 +285,14 @@ class MantisMega(object):
                 try:
                     self.mega_cmd.put(local_path_list=[completed_import], remote_destination_path=mega_path)
                 except MegaError as exc:
-                    msg = 'Problem uploading local file [{f}] to remote path: {p}'.format(
-                        f=completed_import, p=mega_path)
-                    raise MegaError(msg) from exc
+                    log.warning('Problem uploading local file [{f}] to remote path: {p}'.format(
+                        f=completed_import, p=mega_path, e=str(exc)))
+                    failed_uploads.append(pending_upload)
+                    continue
 
-            # Consider the upload successful
-            upload_count += 1
+            # Consider the upload successful and log it
             log.info('Completed [{n}] out of [{m}] uploads'.format(n=str(upload_count), m=str(len(pending_uploads))))
+
             # Update the progress bar with the index
             bar.update(upload_count)
 
@@ -306,11 +314,14 @@ class MantisMega(object):
         self.send_slack_message(text=msg, color='good')
 
         # Log and send a Slack notification about uncompleted uploads
-        if len(unable_to_upload_imports) > 0:
+        if len(failed_uploads) > 0:
             msg = 'Unable to upload [{n}] mantis imports from [{d}] to: {p}'.format(
                 n=str(upload_count), d=self.media_import_root, p=self.mega_root)
             log.warning(msg)
             self.send_slack_message(text=msg, color='danger')
+
+        # Return the failed upload list
+        return failed_uploads
 
     def write_completed_uploads(self, completed_uploads):
         """Writes a list of completed uploads

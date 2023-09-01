@@ -62,7 +62,7 @@ if [ -z "${megaRoot}" ]; then
   read -p "Type the remote MEGA root path to upload to: " megaRoot
 fi
 
-echo "Starting mantis mega uploader..."
+echo "INFO: Starting mantis mega uploader..."
 
 # Timeout for mantis upload processes
 mantisTimeoutSec=3600
@@ -71,21 +71,20 @@ mantisTimeoutSec=3600
 count=0
 while :
 do
-
-  echo "Running mantis..."
+  echo "INFO: Running mantis with a maximum timeout of ${mantisTimeoutSec} seconds..."
   timeout ${mantisTimeoutSec}s mantis mega --rootimportdir ${mediaImportRoot} --megaroot ${megaRoot} --force
   res=$?
   if [ ${res} -eq 0 ]; then
-      echo "mantis exited with code 0"
+      echo "INFO: mantis completed successfully and exited with code 0, exiting..."
       break
   elif [ ${res} -eq 124 ]; then
-      echo "mantis "
+      echo "WARN: mantis timeout reached at ${mantisTimeoutSec} seconds, the MEGA CMD server will be killed and restarted..."
   fi
 
-  echo "mantis exited with code: ${res}, killing the server in 5 seconds..."
+  echo "INFO: mantis exited with code: ${res}, killing the server in 5 seconds..."
   sleep 5
   if [ -z "${OSTYPE}" ]; then
-      echo "Unable to determine OS type, exiting..."
+      echo "ERROR: Unable to determine OS type, exiting..."
       exit 1
   else
       if [[ "${OSTYPE}" == "darwin"* ]]; then
@@ -93,26 +92,34 @@ do
       elif [[ "${OSTYPE}" == "linux-gnu"* ]]; then
           megaFinder=( $(ps -ef | grep -i 'mega-cmd-server' | grep -v 'grep' | awk '{print $2}') )
       else
-          echo "mega uploading in this script if not support for OS: ${OSTYPE}"
+          echo "ERROR: mega uploading in this script is not support for OS: ${OSTYPE}"
       fi
   fi
 
-  echo "Found PIDs: ${megaFinder[@]}"
-  serverPid="${megaFinder[0]}"
-  if [ -z "${serverPid}" ]; then
-    echo "ERROR: Server PID not found, exiting..."
-    exit 1
+  # Exit if nothing with found
+  if [ -z ${megaFinder} ]; then
+      echo "INFO: Unable to find a Mega CMD server PID, mantis will be re-tried..."
+      continue
   fi
-  echo "Killing MEGA CMD server PID: ${serverPid}"
+  echo "Found PIDs: ${megaFinder[@]}"
+
+  # Take the first PID
+  serverPid="${megaFinder[0]}"
+
+  # Ensure the PID was found
+  if [ -z "${serverPid}" ]; then
+    echo "INFO: Server PID not found, continuing to retry mantis..."
+    continue
+  fi
+  echo "INFO: Killing MEGA CMD server PID: ${serverPid}"
   kill -9 "${serverPid}"
   if [ $? -ne 0 ]; then
     echo "ERROR: Problem killing MEGA CMD server PID: ${serverPid}"
     exit 2
   fi
-  echo "Killer server PID: ${serverPid}, waiting 5 seconds to re-try..."
+  echo "INFO: Killer server PID: ${serverPid}, waiting 5 seconds to re-try..."
   sleep 5
-
 done
 
-echo "Completed running the mantis mega uploader!"
+echo "INFO: Completed running the mantis mega uploader!"
 exit 0
