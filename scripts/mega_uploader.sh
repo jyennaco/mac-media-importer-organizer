@@ -150,7 +150,7 @@ count=0
 while :
 do
     echo "INFO: Running mantis with a maximum timeout of ${mantisTimeoutSec} seconds..."
-    timeout ${mantisTimeoutSec}s mantis mega --rootimportdir ${mediaImportRoot} --megaroot ${megaRoot} --force
+    timeout ${mantisTimeoutSec}s mantis mega upload --rootimportdir ${mediaImportRoot} --megaroot ${megaRoot} --force
     res=$?
     if [ ${res} -eq 0 ]; then
         echo "INFO: mantis completed successfully and exited with code 0, exiting..."

@@ -79,7 +79,11 @@ mantis backup --source $HOME --dest /Volumes/KING4GB
 2. Install and start MegaCMD server
 3. Run mantis command:
 
-mantis mega --rootimportdir /Volumes/BACKUP21 --megaroot /BACKUP21
+mantis mega upload --rootimportdir /Volumes/BACKUP21 --megaroot /BACKUP21
+
+# Kill the running mega-cmd server
+
+mantis mega kill
 
 ```
 

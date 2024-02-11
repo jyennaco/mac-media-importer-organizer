@@ -20,9 +20,9 @@ from pycons3rt3.s3util import S3Util
 
 from .archiver import Archiver, ReArchiver
 from .directories import Directories
-from .exceptions import ArchiverError, ImporterError
+from .exceptions import ArchiverError, ImporterError, MegaError
 from .importer import Importer, S3Importer
-from .mega import MantisMega
+from .mega import MantisMega, kill_mega_server
 
 
 mod_logger = Logify.get_name() + '.mediamantis'
@@ -263,6 +263,59 @@ def process_mega(subcommands, args):
     log = logging.getLogger(mod_logger + '.process_mega')
     log.debug('Processing MEGA uploads...')
 
+    # Define the valid subcommands
+    valid_subcommands = [
+        'kill',
+        'upload'
+    ]
+    valid_subcommands_str = ','.join(valid_subcommands)
+
+    # Ensure a subcommand was provided
+    if not subcommands:
+        log.error('Subcommand for mega not provided, must be one of: {v}'.format(v=valid_subcommands_str))
+        return 1
+    if len(subcommands) < 1:
+        log.error('Subcommand for mega not provided, must be one of: {v}'.format(v=valid_subcommands_str))
+        return 1
+
+    # Process the subcommand
+    if subcommands[0] == 'kill':
+        res = process_mega_kill()
+    elif subcommands[0] == 'upload':
+        res = process_mega_uploads(args)
+    else:
+        log.error('Invalid subcommand found [{s}], must be one of: {v}'.format(
+            s=subcommands[0], v=valid_subcommands_str))
+        return 1
+    log.info('Mega exiting with code: {r}'.format(r=str(res)))
+    return res
+
+
+def process_mega_kill():
+    """Kills the mega-cmd server and any ongoing exec commands
+
+    :return: (int) 0 if successful, non-zero otherwise
+    """
+    log = logging.getLogger(mod_logger + '.process_mega_kill')
+    log.info('Processing killing the mega-cmd server...')
+
+    try:
+        kill_mega_server()
+    except MegaError as exc:
+        log.error('Problem killing the mega server\n{e}\n{t}'.format(e=str(exc), t=traceback.format_exc()))
+        return 1
+    return 0
+
+
+def process_mega_uploads(args):
+    """Handles integration with MEGAcmd
+
+    :param args: argparse object
+    :return: (int) 0 for success, non-zero otherwise
+    """
+    log = logging.getLogger(mod_logger + '.process_mega_uploads')
+    log.debug('Processing MEGA uploads...')
+
     # Get args
     media_import_root = None
     if args.rootimportdir:
@@ -434,7 +487,7 @@ def main():
     if args.subcommands:
         subcommands = args.subcommands
     else:
-        subcommands = None
+        subcommands = []
 
     # Initialize mantis
     initialize_mantis(args=args)

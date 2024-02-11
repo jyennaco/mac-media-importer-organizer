@@ -20,11 +20,11 @@ import datetime
 import json
 import logging
 import os
-import platform
 import threading
 import time
 
 import progressbar
+import psutil
 from pycons3rt3.bash import run_command
 from pycons3rt3.exceptions import CommandError
 from pycons3rt3.logify import Logify
@@ -264,12 +264,33 @@ class MantisMega(object):
             upload_count += 1
 
             # Check if the remote path exists
-            try:
-                remote_path_exists = self.mega_cmd.remote_path_exists(remote_path=mega_path)
-            except MegaError as exc:
-                log.warning('Problem determining existence of remote path: {p}\n{e}'.format(
-                    p=mega_path, e=str(exc)))
-                failed_uploads.append(pending_upload)
+            max_attempts = 10
+            retry_sec = 2
+            list_count = 1
+            failed_list = False
+            remote_path_exists = False
+            while True:
+                if list_count > max_attempts:
+                    failed_uploads.append(pending_upload)
+                    failed_list = True
+                    break
+                log.info('Attempting list remote path [{p}] attempt [{n}] of [{m}]'.format(
+                    p=mega_path, n=str(list_count), m=str(max_attempts)
+                ))
+                try:
+                    remote_path_exists = self.mega_cmd.remote_path_exists(remote_path=mega_path)
+                except MegaError as exc:
+                    log.warning('Problem determining existence of remote path: {p}\n{e}'.format(
+                        p=mega_path, e=str(exc)))
+                    list_count += 1
+                    log.warning('Attempting the kill the mega server in {t} sec...'.format(t=str(retry_sec)))
+                    time.sleep(2)
+                    kill_mega_server()
+                else:
+                    break
+
+            if failed_list:
+                log.info('Failed to list remote path [{p}], skipping...'.format(p=mega_path))
                 continue
 
             # Check if the remote path exists on mega, add to found_paths
@@ -282,12 +303,34 @@ class MantisMega(object):
 
                 # Attempt the Mega upload
                 log.debug('Uploading file [{f}] to mega path: {m}'.format(f=completed_import, m=mega_path))
-                try:
-                    self.mega_cmd.put(local_path_list=[completed_import], remote_destination_path=mega_path)
-                except MegaError as exc:
-                    log.warning('Problem uploading local file [{f}] to remote path: {p}'.format(
-                        f=completed_import, p=mega_path, e=str(exc)))
-                    failed_uploads.append(pending_upload)
+
+                # Check if the remote path exists
+                max_attempts = 10
+                retry_sec = 2
+                upload_attempt_count = 1
+                failed_upload = False
+                while True:
+                    if upload_attempt_count > max_attempts:
+                        failed_uploads.append(pending_upload)
+                        failed_upload = True
+                        break
+                    log.info('Attempting upload to remote path [{p}] attempt [{n}] of [{m}]'.format(
+                        p=mega_path, n=str(upload_count), m=str(max_attempts)
+                    ))
+                    try:
+                        self.mega_cmd.put(local_path_list=[completed_import], remote_destination_path=mega_path)
+                    except MegaError as exc:
+                        log.warning('Problem uploading local file [{f}] to remote path: {p}'.format(
+                            f=completed_import, p=mega_path, e=str(exc)))
+                        upload_attempt_count += 1
+                        log.warning('Attempting the kill the mega server in {t} sec...'.format(t=str(retry_sec)))
+                        time.sleep(2)
+                        kill_mega_server()
+                    else:
+                        break
+
+                if failed_upload:
+                    log.info('Failed to upload remote path [{p}], skipping...'.format(p=mega_path))
                     continue
 
             # Consider the upload successful and log it
@@ -508,16 +551,74 @@ class MegaUploader(threading.Thread):
 def kill_mega_server():
     """Attempts to find and kill the MegaCMD server process
 
-    # macOS ONLY
-
     :return: (bool) True if the process was killed, False otherwise
+    :raises: MegaError
     """
     log = logging.getLogger(mod_logger + '.kill_mega_server')
-    current_os = platform.system()
-    if current_os == 'Darwin':
-        # megaCmdPidList=( $(timeout 5s top -stats pid,command | grep -i mega-cmd | awk '{print $1}') )
-        # megaCmdPid="${megaCmdPidList[-1]}"
+
+    mega_cmd_processes = []
+    mega_exec_processes = []
+    for proc in psutil.process_iter(['pid', 'name', 'username']):
+        if 'mega-cmd' in proc.info['name'].lower():
+            mega_cmd_processes.append(proc.info)
+        elif 'mega-exec' in proc.info['name'].lower():
+            mega_exec_processes.append(proc.info)
+    log.info('Found [{n}] mega-cmd processes'.format(n=str(len(mega_cmd_processes))))
+    log.info('Found [{n}] mega-exec processes'.format(n=str(len(mega_exec_processes))))
+
+    # Build the list of processes to kill starting with mega-cmd, followed by mega-exec
+    kill_processes = mega_cmd_processes + mega_exec_processes
+
+    # Kill the mega-cmd processes
+    for process_to_kill in kill_processes:
+        pid = process_to_kill['pid']
+        process_name = process_to_kill['name']
+        if not kill_process(process_name=process_name, pid=pid):
+            msg = 'Unable to kill process [{n}] with PID [{p}]'.format(n=process_name, p=pid)
+            raise MegaError(msg)
+
+
+def kill_process(process_name, pid):
+    """Kill the process with the provided pid
+
+    :param process_name: (str) Process name
+    :param pid: (int) process PID
+    :return: (bool) True if successful, False otherwise
+    :raises: MegaError
+    """
+    log = logging.getLogger(mod_logger + '.kill_process')
+    terminate_timeout_sec = 5
+
+    # Get the process and ensure it exists
+    try:
+        process = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        log.info('Process not found: [{n}] with PID [{p}]'.format(n=process_name, p=pid))
         return True
+
+    # Attempt to terminate the process
+    log.info('Attempting to gracefully terminate the process [{n}] with PID [{p}]'.format(n=process_name, p=str(pid)))
+    process.terminate()
+
+    # Wait for the process to gracefully terminate
+    kill = False
+    try:
+        process.wait(timeout=terminate_timeout_sec)  # Wait for graceful termination
+    except psutil.TimeoutExpired:
+        log.warning('Unable to gracefully terminate process [{n}] with PID [{p}], attempting to kill...'.format(
+            n=process_name, p=str(pid)))
+        kill = True
     else:
-        log.warning('Unsupported OS for killing the MegaCMD process: {p}'.format(p=current_os))
-        return False
+        log.info('Gracefully terminated process [{n}] with PID [{p}]'.format(n=process_name, p=str(pid)))
+        return True
+
+    # Kill the process if graceful termination failed
+    if kill:
+        log.info('Attempting to kill process: [{n}] with PID [{p}]'.format(n=process_name, p=pid))
+        try:
+            process.kill()
+        except psutil.Error as exc:
+            log.warning('Problem killing process: [{n}] with PID [{p}]\n{e}'.format(n=process_name, p=pid, e=str(exc)))
+            return False
+        log.info('Successfully killed process [{n}] with PID [{p}]'.format(n=process_name, p=str(pid)))
+    return True
