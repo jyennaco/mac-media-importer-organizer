@@ -315,7 +315,7 @@ class MantisMega(object):
                         failed_upload = True
                         break
                     log.info('Attempting upload to remote path [{p}] attempt [{n}] of [{m}]'.format(
-                        p=mega_path, n=str(upload_count), m=str(max_attempts)
+                        p=mega_path, n=str(upload_attempt_count), m=str(max_attempts)
                     ))
                     try:
                         self.mega_cmd.put(local_path_list=[completed_import], remote_destination_path=mega_path)
