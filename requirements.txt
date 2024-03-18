@@ -1,0 +1,5 @@
+pillow>=10.2.0
+pillow-heif
+progressbar2>=4.2.0
+pycons3rt3>=0.0.12
+requests>=2.31.0

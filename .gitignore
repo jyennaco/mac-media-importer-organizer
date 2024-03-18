@@ -10,3 +10,4 @@ build
 mediamantis/__pycache__
 *.iml
 .idea/
+venv

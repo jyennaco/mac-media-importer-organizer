@@ -1,6 +1,0 @@
-pillow
-pillow-heif
-progressbar2~=4.2.0
-pycons3rt3~=0.0.12
-requests~=2.28.2
-setuptools~=65.6.3

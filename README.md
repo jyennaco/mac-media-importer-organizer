@@ -4,7 +4,7 @@ mac-media-importer-organizer
 Simple Python3 program that automatically imports and organizes pictures and 
 videos from attached volumes on your Mac.
 
-(There is also a deprecated Ruby version with less features)
+(There is also a deprecated Ruby version with negligible features)
 
 Sample usage:
 
@@ -117,95 +117,64 @@ Media_Inbox/
 
 # Installation
 
-Clone the git repo
-
-```
-git clone git@github.com:jyennaco/mac-media-importer-organizer.git
-#                  or
-git clone https://github.com/jyennaco/mac-media-importer-organizer.git
-```
-
-### Windows
-
-* [Install python3](https://www.python.org/downloads/windows/)
-
-* [Install git](https://git-scm.com/downloads)
-
-* Edit the `PATH` environment variable to includw:
-    * `C:\Python3xx\`
-    * `C:\Python3xx\Scripts`
-
-* Install pip
-
-```
-python3 -m pip install --upgrade pip
-```
-
-* Install virtual environments
-
-```
-python3 -m pip install virtualenv
-```
-
-...continue below...  
-
-### MacOS
-
-* [Install Homebrew](https://brew.sh/)
-
-```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-* Install python3 and git
-
-```
-brew install python3
-brew install git
-```
-
-* Install virtualenv
-
-```
-python -m pip install virtualenv --user
-```
-
-### Install mediamantis
-
-* Clone the git repo and change into it
+* Clone the git repo
 
 ```
 git clone https://github.com/jyennaco/mac-media-importer-organizer.git
 cd mac-media-importer-organizer
 ```
 
+### Windows
+
+* [Install python3](https://www.python.org/downloads/windows/)
+
+* Edit the `PATH` environment variable to include:
+    * `C:\Python3xx\`
+    * `C:\Python3xx\Scripts`
+
+* Continue to the "Install mediamantis" section
+
+### MacOS
+
+* [Install Homebrew](https://brew.sh/)
+* Install python3
+
+```
+brew install python3
+```
+
+* Continue to the "Install mediamantis" section
+
+### Install mediamantis
+
+* Install Prerequisites
+
+```
+python3 -m pip install --upgrade pip
+python3 -m pip install build
+```
+
 * Create a virtual environment in the repo directory
 
 ```
-# MacOS:
-virtualenv -p python3 venv
-
-# Windows:
-virtualenv -p python3 venv
+python3 -m venv venv
 ```
 
 * Activate the virtual environment
 
 ```
+# Linux/maxOS
 source ./venv/bin/activate
-```
 
-* Verify the python3 version, and pip location are in the venv
-
-```
-python3 --version
+# Windows
+.\venv\bin\activate.ps1
 ```
 
 * Install dependencies and install mediamantis
 
 ```
-python3 -m pip install -r cfg/requirements.txt
-python3 setup.py install
+python3 -m build
+python3 -m pip install .
 ```
 
 * Test the installation

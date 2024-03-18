@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mediamantis"
+version = "0.0.1a0"
+description = "A python application for managing your media files"
+authors = [
+    {name = "Joe Yennaco", email = "helpfuljoe@proton.me"}
+]
+requires-python = ">=3.6"
+license = {file = "LICENSE"}
+readme = "README.md"
+dependencies = [
+    "pillow",
+    "pillow-heif",
+    "progressbar2",
+    "pycons3rt3",
+    "requests"
+]
+keywords = ["mantis", "mediamantis", "media"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3"
+]
+
+[project.scripts]
+mantis = "mediamantis.mediamantis:main"
+
+[project.urls]
+Homepage = "https://github.com/jyennaco/mac-media-importer-organizer"
+Documentation = "https://github.com/jyennaco/mac-media-importer-organizer/blob/master/README.md"
+Repository = "https://github.com/jyennaco/mac-media-importer-organizer.git"
+Issues = "https://github.com/jyennaco/mac-media-importer-organizer/issues"
+Changelog = "https://github.com/jyennaco/mac-media-importer-organizer/blob/master/CHANGELOG.md"
+
+[tool.setuptools]
+# By default, include-package-data is true in pyproject.toml, so you do
+# NOT necessarily have to specify this line.
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["mediamantis"]
+exclude = ["lib"]
+namespaces = false
+
