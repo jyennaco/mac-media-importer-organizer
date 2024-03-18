@@ -528,7 +528,7 @@ class MegaCmd(object):
 class MegaUploader(threading.Thread):
     """TBD
 
-    Upload files to MEGA cloud multithreaded
+    Upload files to MEGA cloud multithreading
     """
 
     def __init__(self, slack_webhook_url=None, slack_channel=None, slack_text=None):
@@ -601,24 +601,21 @@ def kill_process(process_name, pid):
     process.terminate()
 
     # Wait for the process to gracefully terminate
-    kill = False
     try:
         process.wait(timeout=terminate_timeout_sec)  # Wait for graceful termination
     except psutil.TimeoutExpired:
         log.warning('Unable to gracefully terminate process [{n}] with PID [{p}], attempting to kill...'.format(
             n=process_name, p=str(pid)))
-        kill = True
     else:
         log.info('Gracefully terminated process [{n}] with PID [{p}]'.format(n=process_name, p=str(pid)))
         return True
 
     # Kill the process if graceful termination failed
-    if kill:
-        log.info('Attempting to kill process: [{n}] with PID [{p}]'.format(n=process_name, p=pid))
-        try:
-            process.kill()
-        except psutil.Error as exc:
-            log.warning('Problem killing process: [{n}] with PID [{p}]\n{e}'.format(n=process_name, p=pid, e=str(exc)))
-            return False
-        log.info('Successfully killed process [{n}] with PID [{p}]'.format(n=process_name, p=str(pid)))
+    log.info('Attempting to kill process: [{n}] with PID [{p}]'.format(n=process_name, p=pid))
+    try:
+        process.kill()
+    except psutil.Error as exc:
+        log.warning('Problem killing process: [{n}] with PID [{p}]\n{e}'.format(n=process_name, p=pid, e=str(exc)))
+        return False
+    log.info('Successfully killed process [{n}] with PID [{p}]'.format(n=process_name, p=str(pid)))
     return True

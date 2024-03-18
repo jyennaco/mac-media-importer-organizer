@@ -23,6 +23,7 @@ from .directories import Directories
 from .exceptions import ArchiverError, ImporterError, MegaError
 from .importer import Importer, S3Importer
 from .mega import MantisMega, kill_mega_server
+from .version import __version__
 
 
 mod_logger = Logify.get_name() + '.mediamantis'
@@ -76,7 +77,7 @@ def archive(args):
     if args.s3bucket:
         s3bucket = args.s3bucket
         try:
-            _ = S3Util(_bucket_name=s3bucket)
+            _ = S3Util(bucket_name=s3bucket)
         except (S3UtilError, Exception) as exc:
             log.error('Problem validating existence of S3 bucket named: {b}\n{e}'.format(b=s3bucket, e=str(exc)))
             traceback.print_exc()
@@ -104,18 +105,10 @@ def archive(args):
     return 0
 
 
-def backup(args):
+def backup():
     log = logging.getLogger(mod_logger + '.backup')
-    if args.source:
-        source_dir = args.source
-    else:
-        log.error('--source arg is required, set to the root directory of media files to backup')
-        return 1
-    if args.dest:
-        dest_dir = args.dest
-    else:
-        log.error('--dest arg is required, set to the root target directory to backup to')
-        return 1
+    log.info('Running backup...')
+    return 0
 
 
 def import_media(args):
@@ -137,11 +130,6 @@ def import_media_from_local(args):
         log.error('--dir arg is required, set to the path of media files to archive')
         return 1
 
-    force = False
-    if args.force:
-        log.info('Importing with force = True')
-        force = True
-
     root_import_dir = None
     if args.rootimportdir:
         root_import_dir = args.rootimportdir
@@ -154,13 +142,9 @@ def import_media_from_local(args):
     if args.cleanup:
         cleanup = True
 
-    mega = False
-    if args.mega:
-        mega = True
-
     imp = Importer(import_dir=source_dir, media_import_root=root_import_dir, library=library)
     try:
-        imp.process_import(delete_import_dir=cleanup, mega=mega)
+        imp.process_import(delete_import_dir=cleanup)
     except ImporterError as exc:
         log.error('Problem processing import from directory: {d}\n{e}'.format(d=source_dir, e=str(exc)))
         traceback.print_exc()
@@ -462,18 +446,25 @@ def main():
     parser.add_argument('--dest', help='Destination root directory for media to backup', required=False)
     parser.add_argument('--dir', help='Archive directory to process', required=False)
     parser.add_argument('--filters', help='Comma-separated list of strings to filter on', required=False)
-    parser.add_argument('--force', help='Force import without querying the user', required=False, action='store_true')
-    parser.add_argument('--keyword', help='Keyword to include in archive names instead of a random one', required=False)
-    parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir', required=False)
-    parser.add_argument('--list', help='Output a list pertaining to the command', required=False, action='store_true')
-    parser.add_argument('--mediainbox', help='Directory to create archives under and to be used for staging',
+    parser.add_argument('--force', help='Force import without querying the user', required=False,
+                        action='store_true')
+    parser.add_argument('--keyword', help='Keyword to include in archive names instead of a random one',
+                        required=False)
+    parser.add_argument('--library', help='Name of the library to import, exists under rootimportdir',
+                        required=False)
+    parser.add_argument('--list', help='Output a list pertaining to the command', required=False,
+                        action='store_true')
+    parser.add_argument('--mediainbox', help='Directory to create archives and for staging',
                         required=False)
     parser.add_argument('--mega', help='Import files to Mega cloud', required=False, action='store_true')
-    parser.add_argument('--megaroot', help='MEGA root directory to upload media files to', required=False)
-    parser.add_argument('--rootimportdir', help='Root directory to import media files under', required=False)
+    parser.add_argument('--megaroot', help='MEGA root directory to upload media files to',
+                        required=False)
+    parser.add_argument('--rootimportdir', help='Root directory to import media files under',
+                        required=False)
     parser.add_argument('--s3bucket', help='S3 bucket to upload to', required=False)
     parser.add_argument('--s3key', help='S3 bucket key to import', required=False)
     parser.add_argument('--source', help='Source root directory for media to backup', required=False)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args()
 
     # Get the command
@@ -496,7 +487,7 @@ def main():
     if command == 'archive':
         res = archive(args)
     elif command == 'backup':
-        res = backup(args)
+        res = backup()
     elif command == 'import':
         res = import_media(args)
     elif command in ['init', 'initialize']:

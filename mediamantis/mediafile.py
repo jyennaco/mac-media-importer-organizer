@@ -10,7 +10,7 @@ Data type for media files
 import datetime
 import os
 
-from .mantistypes import ArchiveStatus, ImportStatus, MediaFileType
+from .mantistypes import ArchiveStatus, ImportStatus
 
 
 class MediaFile(object):

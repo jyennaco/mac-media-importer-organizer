@@ -101,7 +101,7 @@ class BackerUpper
       # Make the target directory if it doesn't exist
       Dir.mkdir(target_path) unless File.exist?(target_path)
       
-      # Get the list of items in the directory and filter out unwanteds
+      # Get the list of items in the directory and filter out unwanted items
       items = Dir.entries(source_path)
       items.delete_if { |x| skip?(x) }
       items.delete_if { |x| x.start_with?(".") }

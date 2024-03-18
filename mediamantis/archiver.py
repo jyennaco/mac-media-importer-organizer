@@ -27,10 +27,11 @@ import requests
 
 from .directories import Directories
 from .exceptions import ArchiverError, ZipError
-from .mantistypes import chunker, get_slack_webhook, ArchiveStatus, MediaFileType
+from .mantistypes import get_slack_webhook, ArchiveStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions, max_archive_size_bytes, skip_items
-from .version import version
+from .version import __version__
+from .threads import process_threads
 from .zip import unzip_archive, zip_dir
 
 
@@ -197,8 +198,8 @@ class Archiver(threading.Thread):
         :param last_timestamp: (str) timestamp format: yyyymmdd-HHMMSS
         :return: (str) directory name for an archive of format: yyyymmdd-yyyymmdd_uniqueWord
         """
-        return first_timestamp.split('-')[0] + '-' + last_timestamp.split('-')[0] + '_' + self.primary_id_word + \
-               str(random.randint(10, 99))
+        return (first_timestamp.split('-')[0] + '-' + last_timestamp.split('-')[0] + '_' + self.primary_id_word +
+                str(random.randint(10, 99)))
 
     def create_archive_info_file(self, archive_path):
         """Creates an archive.txt path
@@ -206,7 +207,7 @@ class Archiver(threading.Thread):
         """
         log = logging.getLogger(self.cls_logger + '.create_archive_info_file')
         archive_info_file = os.path.join(archive_path, 'archive.txt')
-        info_txt = 'Created by mediamantis version: {v}\n'.format(v=version())
+        info_txt = 'Created by mediamantis version: {v}\n'.format(v=__version__)
         info_txt += 'Created on: {t}\n'.format(t=datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
         info_txt += 'Created from: {d}\n'.format(d=self.dir_to_archive)
         info_txt += 'Using ID word: {w}\n'.format(w=self.primary_id_word)
@@ -228,7 +229,7 @@ class Archiver(threading.Thread):
         new_path = os.path.join(self.archive_files_dir, self.create_archive_dir_name(first_timestamp, last_timestamp))
         log.info('Renaming directory [{s}] to: [{d}]'.format(s=self.archive_files_path, d=new_path))
         try:
-            shutil.move(src=self.archive_files_path, dst=new_path)
+            shutil.move(src=str(self.archive_files_path), dst=str(new_path))
         except Exception as exc:
             raise ArchiverError('Problem renaming archive directory to: {n}'.format(n=new_path)) from exc
         self.archive_dir_list.append(new_path)
@@ -250,7 +251,7 @@ class Archiver(threading.Thread):
     def verify_disk_space(self):
         """Ensures the destination disk has enough space
 
-        :return: True is enough disk space is determines, False otherwise
+        :return: True if enough disk space is determined, False otherwise
         """
         log = logging.getLogger(self.cls_logger + '.verify_disk_space')
         free_disk_space = shutil.disk_usage(self.archive_files_path).free
@@ -295,14 +296,14 @@ class Archiver(threading.Thread):
         # Move the file to the archive directory
         log.info('Archiving file: {f}'.format(f=media_file.file_path))
         try:
-            shutil.move(media_file.file_path, self.archive_files_path)
+            shutil.move(src=str(media_file.file_path), dst=str(self.archive_files_path))
         except Exception as exc:
             raise ArchiverError('Problem moving file [{f}] to: {d}'.format(
                 f=media_file.file_path, d=self.archive_files_path)) from exc
         media_file.archive_status = ArchiveStatus.COMPLETED
         media_file.destination_path = os.path.join(
-            self.archive_files_path,
-            media_file.file_name
+            str(self.archive_files_path),
+            str(media_file.file_name)
         )
 
     def zip_archives(self):
@@ -336,7 +337,7 @@ class Archiver(threading.Thread):
         """
         log = logging.getLogger(self.cls_logger + '.upload_to_s3')
         try:
-            s3 = S3Util(_bucket_name=bucket_name)
+            s3 = S3Util(bucket_name=bucket_name)
         except S3UtilError as exc:
             raise ArchiverError('Problem connecting to S3 bucket: {b}'.format(b=bucket_name)) from exc
         if len(self.archive_zip_list) < 1:
@@ -398,9 +399,6 @@ class Archiver(threading.Thread):
         for media_file in self.media_files:
             if media_file.archive_status == ArchiveStatus.COMPLETED:
                 continue
-            # if media_file.file_type == MediaFileType.UNKNOWN:
-            #    log.info('Unknown file type will not be archived: {f}'.format(f=media_file.file_name))
-            #    continue
             if archive_size_bytes > max_archive_size_bytes:
                 log.info('Max archive size reached for: {d}'.format(d=self.archive_files_path))
                 if not last_timestamp:
@@ -528,7 +526,7 @@ class ReArchiver(threading.Thread):
         if len(self.re_archive_s3_keys) < 1:
             raise ArchiverError('So S3 keys found in the reachive.txt file')
         try:
-            s3 = S3Util(_bucket_name=self.s3_bucket)
+            s3 = S3Util(bucket_name=self.s3_bucket)
         except S3UtilError as exc:
             raise ArchiverError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
         s3_keys = s3.find_keys(regex='')
@@ -561,19 +559,7 @@ class ReArchiver(threading.Thread):
         log.info('Added {n} threads'.format(n=str(len(self.threads))))
 
         # Start threads in groups
-        thread_group_num = 1
-        log.info('Starting threads in groups of: {n}'.format(n=str(self.max_simultaneous_threads)))
-        for thread_group in chunker(self.threads, self.max_simultaneous_threads):
-            log.info('Starting thread group: {n}'.format(n=str(thread_group_num)))
-            for thread in thread_group:
-                thread.start()
-
-            log.info('Waiting for completion of thread group: {n}'.format(n=str(thread_group_num)))
-            for t in thread_group:
-                t.join()
-            log.info('Completed thread group: {n}'.format(n=str(thread_group_num)))
-            thread_group_num += 1
-        log.info('Completed processing all thread groups')
+        process_threads(threads=self.threads, max_simultaneous_threads=self.max_simultaneous_threads)
 
         # Cleaning up files
         log.info('Cleaning up files from successful re-archives...')
@@ -743,15 +729,15 @@ def get_image_creation_time_from_exif_data(file_path):
     image = Image.open(file_path)
 
     # extract EXIF data
-    exifdata = image.getexif()
+    exif_data = image.getexif()
 
     # iterating over all EXIF data fields
     image_date_time = None
-    for tag_id in exifdata:
+    for tag_id in exif_data:
         # get the tag name, instead of human unreadable tag id
         tag = TAGS.get(tag_id, tag_id)
         if tag == 'DateTime':
-            image_date_time = exifdata.get(tag_id)
+            image_date_time = exif_data.get(tag_id)
             break
 
     # Expected format is: 2022:08:13 11:23:43
@@ -775,7 +761,7 @@ def read_archive_text(archive_text_path):
     """Reads archive.txt file
 
     :param archive_text_path: (str) path to the archive.txt file for an archive
-    :return: (dict) archive meta data
+    :return: (dict) archive metadata
     :raises: ArchiverError
     """
     if not os.path.isfile(archive_text_path):

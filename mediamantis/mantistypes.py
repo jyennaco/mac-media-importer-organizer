@@ -404,7 +404,7 @@ do
         echo "INFO: mantis completed successfully and exited with code 0, exiting..."
         break
     elif [ ${res} -eq 124 ]; then
-        echo "WARN: mantis timeout reached at ${mantisTimeoutSec} seconds, the MEGA CMD server will be killed and restarted..."
+        echo "WARN: mantis timeout reached at ${mantisTimeoutSec} seconds, the MEGA CMD server will be killed..."
     else
         echo "WARN: mantis exited with code ${res}, the MEGA CMD server will be killed and restarted..."
     fi

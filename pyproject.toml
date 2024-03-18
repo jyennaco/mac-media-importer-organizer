@@ -16,6 +16,7 @@ dependencies = [
     "pillow",
     "pillow-heif",
     "progressbar2",
+    "psutil",
     "pycons3rt3",
     "requests"
 ]
@@ -36,12 +37,9 @@ Issues = "https://github.com/jyennaco/mac-media-importer-organizer/issues"
 Changelog = "https://github.com/jyennaco/mac-media-importer-organizer/blob/master/CHANGELOG.md"
 
 [tool.setuptools]
-# By default, include-package-data is true in pyproject.toml, so you do
-# NOT necessarily have to specify this line.
 include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["mediamantis"]
-exclude = ["lib"]
+where = ["."]
+exclude = []
 namespaces = false
-

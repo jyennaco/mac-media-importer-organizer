@@ -24,9 +24,10 @@ from pycons3rt3.slack import SlackAttachment, SlackMessage
 from .archiver import Archiver, read_archive_text
 from .directories import Directories
 from .exceptions import ArchiverError, ImporterError, ZipError
-from .mantistypes import chunker, get_slack_webhook, ImportStatus, MediaFileType
+from .mantistypes import get_slack_webhook, ImportStatus, MediaFileType
 from .mediafile import MediaFile
 from .settings import extensions
+from .threads import process_threads
 from .zip import unzip_archive
 
 
@@ -39,7 +40,7 @@ class S3Importer(object):
         self.cls_logger = mod_logger + '.S3Importer'
         self.s3_bucket = s3_bucket
         try:
-            self.s3 = S3Util(_bucket_name=self.s3_bucket)
+            self.s3 = S3Util(bucket_name=self.s3_bucket)
         except S3UtilError as exc:
             self.failed_import = True
             raise ImporterError('Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)) from exc
@@ -129,19 +130,7 @@ class S3Importer(object):
             self.threads.append(imp)
 
         # Start threads in groups
-        thread_group_num = 1
-        log.info('Starting threads in groups of: {n}'.format(n=str(self.max_simultaneous_threads)))
-        for thread_group in chunker(self.threads, self.max_simultaneous_threads):
-            log.info('Starting thread group: {n}'.format(n=str(thread_group_num)))
-            for thread in thread_group:
-                thread.start()
-
-            log.info('Waiting for completion of thread group: {n}'.format(n=str(thread_group_num)))
-            for t in thread_group:
-                t.join()
-            log.info('Completed thread group: {n}'.format(n=str(thread_group_num)))
-            thread_group_num += 1
-        log.info('Completed processing all thread groups')
+        process_threads(threads=self.threads, max_simultaneous_threads=self.max_simultaneous_threads)
 
         # Log successful or failed imports to the respective files
         successful_count = 0
@@ -373,11 +362,10 @@ class Importer(threading.Thread):
             self.audio_import_count += 1
         self.file_import_count += 1
 
-    def process_import(self, delete_import_dir=False, mega=False):
+    def process_import(self, delete_import_dir=False):
         """Process the import of media from a directory
 
         :param delete_import_dir: (bool) delete_import_dir: Set True to delete the import directory
-        :param mega: (bool) Set True to also import to MegaCMD
 
         return: none
         raises: ImporterError
@@ -394,7 +382,7 @@ class Importer(threading.Thread):
         # Import the S3 archive if both a bucket name and S3 key were provided
         if self.s3_key and self.s3_bucket:
             try:
-                s3 = S3Util(_bucket_name=self.s3_bucket)
+                s3 = S3Util(bucket_name=self.s3_bucket)
             except S3UtilError as exc:
                 self.failed_import = True
                 msg = 'Problem connecting to S3 bucket: {b}'.format(b=self.s3_bucket)
@@ -701,11 +689,10 @@ def read_failed_imports(dirs):
     return failed_imports
 
 
-def read_imports_dir_file(imports_dir_file_path, media_import_root):
+def read_imports_dir_file(imports_dir_file_path):
     """Reads the contents of the imports dir file
 
     :param imports_dir_file_path: (str) Full path to the imports dir file
-    :param media_import_root: (str) Full path to the media import root
     :return: (list) Unique list of file paths for import directories
     """
     import_dirs = []
@@ -744,9 +731,8 @@ def write_imports_dir_file(imports_dir_file_path, media_import_root):
     if not os.path.isdir(media_import_root):
         raise ImporterError('Media import root directory not found: {d}'.format(d=media_import_root))
 
-    # Get the current list of unqiue import dirs
-    import_dirs = read_imports_dir_file(imports_dir_file_path=imports_dir_file_path,
-                                        media_import_root=media_import_root)
+    # Get the current list of unique import dirs
+    import_dirs = read_imports_dir_file(imports_dir_file_path=imports_dir_file_path)
 
     # Add the new media import root
     import_dirs.append(media_import_root)

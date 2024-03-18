@@ -51,17 +51,17 @@ function process_file() {
     cd ${photo_inbox} >> ${logFile} 2>&1
     extension=$(echo $import_filename | awk -F . '{print $NF}')
 
-    # Unzip or untar depending on the extension
+    # Unzip or un-tar depending on the extension
     if [ ${extension} == "gz" ]; then
-      logInfo "Found bz extension, untarring: $import_filename"
+      logInfo "Found bz extension, un-tarring: $import_filename"
       tar -xvzf $import_filename >> $logFile 2>&1
-      if [ $? -ne 0 ]; then logErr "Problem untarring: ${local_path}"; return 3; fi
+      if [ $? -ne 0 ]; then logErr "Problem un-tarring: ${local_path}"; return 3; fi
     elif [ ${extension} == "zip" ]; then
       logInfo "Found zip extension, unzipping: $import_filename"
       unzip ${import_filename} >> ${logFile} 2>&1
       if [ $? -ne 0 ]; then logErr "Problem unzipping: ${local_path}"; return 4; fi
     elif [ ${extension} == "bz2" ]; then
-      logInfo "Found bz2 extension, untarring: $import_filename"
+      logInfo "Found bz2 extension, un-tarring: $import_filename"
       tar -xvjf ${import_filename} >> ${logFile} 2>&1
       if [ $? -ne 0 ]; then logErr "Problem unzipping: ${local_path}"; return 5; fi
     else
